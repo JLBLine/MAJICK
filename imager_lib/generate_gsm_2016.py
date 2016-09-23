@@ -2,6 +2,7 @@ __author__ = 'omniscope+jline'
 import numpy as np
 import optparse, sys, os
 import healpy as hp
+from matplotlib.pyplot import close
 
 script_path = "/usr/local/gsm2016"
 labels = ['Synchrotron', 'CMB', 'HI', 'Dust1', 'Dust2', 'Free-Free']
@@ -22,16 +23,18 @@ def K_RJ2MJysr(K_RJ, nu):#in Kelvin and Hz
     return  K_RJ * conversion_factor * 1e20#1e-26 for Jy and 1e6 for MJy
 
 
-def generate_gsm2016(freq=None,date=None,observer=None):
+def generate_gsm_2016(freq=None,this_date=None,observer=None):
 	'''Generates an orthographic view of the 2016 GSM for a given
 	observer, for a given date, and given frequency (MHz)'''
 	
+	freq *= 1e-9
+	
 	##This is directly lifted from github code - dunno what it's doing!
 	nside = 1024
-    if freq < 1000:
-        op_resolution = 48
-    else:
-        op_resolution = 24
+	if freq < 1000:
+		op_resolution = 48
+	else:
+		op_resolution = 24
         
 	map_ni = np.array([np.fromfile(script_path + '/data/highres_%s_map.bin'%lb, dtype='float32') for lb in labels])
 	spec_nf = np.loadtxt(script_path + '/data/spectra.txt')
@@ -60,7 +63,7 @@ def generate_gsm2016(freq=None,date=None,observer=None):
 	result = hp.reorder(result, n2r=True)
 
 	##format the date, and change the date of the observer to now
-	date,time = intial_date.split('T')
+	date,time = this_date.split('T')
 	observer.date = '/'.join(date.split('-'))+' '+time
 
 	##Here be code that I lifted from PyGSM
@@ -71,7 +74,7 @@ def generate_gsm2016(freq=None,date=None,observer=None):
 
 
 	# Get RA and DEC of zenith
-	ra_rad, dec_rad = MRO.radec_of(0, np.pi/2)
+	ra_rad, dec_rad = observer.radec_of(0, np.pi/2)
 	ra_deg  = ra_rad / np.pi * 180
 	dec_deg = dec_rad / np.pi * 180
 
@@ -90,12 +93,15 @@ def generate_gsm2016(freq=None,date=None,observer=None):
 	observed_sky = hp.ma(sky_rotated)
 	observed_sky.mask = mask
 
-	sky_view = hp.orthview(np.log(observed_sky), half_sky=True, return_projected_map=True)
-	plt.close()
+	sky_view = hp.orthview(observed_sky, half_sky=True, return_projected_map=True)
+	close()
 	#plt.show()
 
-	## * 1e-6 because in MJy, * (1 / ((0.4*np.pi) / 180.0))**2 to go from per sr to per pixel
-	sky_view = np.array(sky_view) * 1e-6 * (1 / ((0.4*np.pi) / 180.0))**2
+	##resolution is hard coded to 0.8 deg
+	## * 1e+6 because in MJy, * (1/((0.4*np.pi) / 180.0))**2 to go from per sr to per pixel
+	sky_view = np.array(sky_view) * 1e+5 * (((0.8*np.pi) / 180.0))**2
 	sky_view[sky_view == -np.inf] = 0
 	
-	return sky_view
+	l_reso = 2.0 / sky_view.shape[0]
+	
+	return sky_view, l_reso

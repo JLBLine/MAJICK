@@ -7,7 +7,7 @@ from __future__ import absolute_import
 from uvdata_classes import *
 #from astropy.io import fits
 #from ephem import Observer,degrees
-from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,linspace,sinc,repeat,reshape
+from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,linspace,sinc,repeat,reshape,loadtxt
 from numpy import abs as np_abs
 from numpy import exp as np_exp
 from cmath import phase,exp
@@ -277,81 +277,103 @@ def convert_image_lm2uv(image=None,l_reso=None):
 	'''Takes an l,m projected all sky and ffts to give a u,v plane from which
 	to (re)grid from'''
 	
-	##GSM is an all sky model
-	
 	im_width = image.shape[0]
-	
 	##Need to make image odd to ensure we get all the correct u ranges??
 	
+	##Work out the u,v coords of the FT of the image - this is out uv grid
+	u_extent = 1.0 / l_reso
+	u_reso = u_extent / float(im_width)
+	
+	##These values can be used to set up a range of coords centred on zero;
+	##if we have an even sized image, we can use same method and just use up
+	##until one before the last in the range
+	n2max = int((u_extent/2) / u_reso)
+	
+	#if num_samples
+	#num_samples = image.shape[0]
+	##Set up the u and v coords
+	offset = n2max*l_reso / float(im_width)
+	
+	offset = 0
 	
 	if im_width % 2 == 0:
 		shift_image = fft.fftshift(image)
 		uv_data_array = fft.fft2(shift_image) #/ (image.shape[0] * image.shape[1])
 		uv_data_array = fft.ifftshift(uv_data_array)
-	
+		
+		num_samples = im_width + 1
+		u_sim = linspace(-n2max*u_reso + offset, n2max*u_reso - offset, num_samples)
+		##TODO - why negative???
+		v_sim = -linspace(-n2max*u_reso + offset, n2max*u_reso - offset, num_samples)
+		
+		##If even, need one less coords u_sim currently odd, with zero at centre
+		u_sim = u_sim[:-1]
+		v_sim = v_sim[:-1]
+		
+		#u_sim = u_sim[1:]
+		#v_sim = v_sim[1:]
+		
 	else:
 		shift_image = fft.ifftshift(image)
 		uv_data_array = fft.fft2(shift_image) #/ (image.shape[0] * image.shape[1])
 		uv_data_array = fft.fftshift(uv_data_array)
-
-
-
-def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None,weights=None, kernel='none',kernel_params=None, conjugate=False,central_lst=None,time_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_cent=None,beam_image=None):
-	'''A reverse gridded - takes a grid of uv data (must be square!!), and then samples the 
-	u,v data at the given u,v coords, using the desired kerrnel'''
+		
+		num_samples = im_width
+		u_sim = linspace(-n2max*u_reso + offset, n2max*u_reso - offset, num_samples)
+		##TODO - why negative???
+		v_sim = -linspace(-n2max*u_reso + offset, n2max*u_reso - offset, num_samples)
 	
-	##Work out the u,v coords of the FT of the image - this is out uv grid
-	u_extent = 1.0 / l_reso
-	#v_extent = 1.0 / m_reso
-	u_reso = u_extent / float(uv_data_array.shape[0])
-	#v_reso
-	
-	
-	n2max = int((u_extent/2) / u_reso)
 	
 	##Set the num_samples to be the number of pixels in image space
 	
-	num_samples = uv_data_array.shape[0]
 	
-	offset = n2max*l_reso / float(uv_data_array.shape[0])
-	u_sim = linspace(-n2max*u_reso + offset, n2max*u_reso - offset, num_samples)
-	v_sim = -linspace(-n2max*u_reso + offset, n2max*u_reso - offset, num_samples)
 	
-	###_---------------------
-	#u_mesh, v_mesh = meshgrid(u_sim,v_sim)
+	##GET convert_image_lm2uv to do this, so that we can have u,v data planes where
+	##len(u_sim) = odd
 	
-	#plt.imshow(u_mesh,origin='lower',interpolation='none')
-	#plt.colorbar()
-	#plt.show()
-	###_---------------------
+	return uv_data_array,u_sim,v_sim,u_reso
+
+
+
+def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None,weights=None, kernel='none',kernel_params=None, conjugate=False,central_lst=None,time_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_cent=None,beam_image=None,delay_str="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",u_sim=None,v_sim=None,image=None,u_reso=None):
+	'''A reverse gridded - takes a grid of uv data (must be square!!), and then samples the 
+	u,v data at the given u,v coords, using the desired kerrnel'''
+	
+	###Work out the u,v coords of the FT of the image - this is out uv grid
+	#u_extent = 1.0 / l_reso
+	#u_reso = u_extent / float(uv_data_array.shape[0])
+	
+	#n2max = int((u_extent/2) / u_reso)
+	
+	###Set the num_samples to be the number of pixels in image space
+	#num_samples = uv_data_array.shape[0]
+	
+	
+	###GET convert_image_lm2uv to do this, so that we can have u,v data planes where
+	###len(u_sim) = odd
+	
+	
+	###Set up the u and v coords
+	#offset = n2max*l_reso / float(uv_data_array.shape[0])
+	#u_sim = linspace(-n2max*u_reso + offset, n2max*u_reso - offset, num_samples)
+	###TODO - why negative???
+	#v_sim = -linspace(-n2max*u_reso + offset, n2max*u_reso - offset, num_samples)
 	
 	
 	sim_complexes = []
 	
-	#for i in xrange(len(u_coords)):
-		#u,v = u_coords[i],v_coords[i]
-		
-	#print(u,v,u_sim,v_sim)
-		
 	u_ind,v_ind,u_off,v_off = find_closet_uv(u=u,v=v,u_range=u_sim,v_range=v_sim,resolution=u_reso)
-	##Reverse gridding so we need to take the negative of the offsets - 
-	##moving the data point off the grid into arbitrary u,v position instead
-	##of vice-versa
-	#u_off,v_off = 0,0
-	
 	##As v is going in opposite direction compared to when gridding (we have +ve to -ve)
 	##in v_sim, need to take the negative value of v_off
+	##TODO - why negative???
 	v_off = -v_off
-	#u_off = -u_off
 	
 	if kernel == 'gaussian':
 		kernel_params = [2.0,2.0]
 		sig_x,sig_y = kernel_params
 		
-		sig_x,sig_y = [2.0,2.0]
+		##To directly create guassian kernel in u,v space
 		#kernel_array = gaussian(sig_x=sig_x,sig_y=sig_y,x_offset=u_off,y_offset=v_off,gridsize=51)
-
-		
 		
 		l_extent = num_samples * l_reso
 		n2max = int((l_extent/2) / l_reso)
@@ -362,45 +384,6 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None,we
 		##FT the image kernel to create the gridding kernel
 		kernel_array = image2kernel(image=image_kernel,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
 		
-		#def add_colorbar(im,ax):
-			#from mpl_toolkits.axes_grid1 import make_axes_locatable
-			#divider = make_axes_locatable(ax)
-			#cax = divider.append_axes("right", size="5%", pad=0.05)
-			#cbar = fig.colorbar(im, cax = cax)
-		
-		#fig = plt.figure(figsize=(10,10))
-		#ax1 = fig.add_subplot(231)
-		#ax2 = fig.add_subplot(232)
-		#ax3 = fig.add_subplot(233)
-		#ax4 = fig.add_subplot(234)
-		#ax5 = fig.add_subplot(235)
-		#ax6 = fig.add_subplot(236)
-		
-		#im1 = ax1.imshow(real(kernel_array),interpolation='none')
-		#im2 = ax2.imshow(real(kernel_array_im),interpolation='none')
-		#im3 = ax3.imshow(real(image_kernel),interpolation='none')
-		
-		#im4 = ax4.imshow(imag(kernel_array),interpolation='none')
-		#im5 = ax5.imshow(imag(kernel_array_im),interpolation='none')
-		#im6 = ax6.imshow(imag(image_kernel),interpolation='none')
-		
-		#for im,ax in zip([im1,im2,im3,im4,im5,im6],[ax1,ax2,ax3,ax4,ax5,ax6]):
-			#add_colorbar(im,ax)
-		
-		#plt.tight_layout()
-		#plt.show()
-		#plt.close()
-		
-		#if time_decor:
-			#ra0,dec0 = phase_centre
-			#h0 = central_lst - ra0
-			#X,Y,Z = xyz_lengths[i]
-			#n_mesh = sqrt(1 - (l_mesh*l_mesh + m_mesh*m_mesh))
-			
-			#image_time = 1/(tdecorr_phasetrack(X=X,Y=Y,Z=Z,d0=dec0*D2R,h0=h0*D2R,l=l_mesh,m=m_mesh,n=n_mesh,time_int=time_int))
-			#image_kernel *= image_time
-		#kernel_array = image2kernel(image=image_kernel,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
-		
 	elif kernel=='mwa_beam':
 		
 		XX,YY = beam_image
@@ -410,49 +393,23 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None,we
 		##Create a meshgrid to sample over whole l,m range with default 31 samples
 		
 		l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
-		#kernel_params = [2.0,2.0]
-		#sig_x,sig_y = kernel_params
-		#im_gaussian = image_gaussian(kernel_sig_x=sig_x,kernel_sig_y=sig_y,l_mesh=l_mesh,m_mesh=m_mesh,cell_reso=u_reso)
 		
-		#fig = plt.figure()
-		#ax1 = fig.add_subplot(221)
-		#ax2 = fig.add_subplot(222)
-		#ax3 = fig.add_subplot(223)
-		#ax4 = fig.add_subplot(224)
-		
-		#ax1.imshow(im_gaussian,interpolation='none')
-		#ax2.imshow(XX,interpolation='none')
+		kernel_array = image2kernel(image=XX,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
 		
 		
-		#plt.imshow(image_kernel,interpolation='none')
-		#plt.show()
+	elif kernel == 'mwa_phase1':
+		l_extent = 1.0 / u_reso
+		l_reso = l_extent / len(u_sim)
+		n2max = int((l_extent/2) / l_reso)
+		##Create a meshgrid to sample over whole l,m range with default 31 samples
+		l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
 		
+		##TODO - get this path in a smart way
+		beam_loc = '/home/jline/Documents/time_decorrelation/MAJICK/telescopes/mwa_phase1/primary_beam/data'
+		XX = loadtxt('%s/beam_%s_%.3f_XX.txt' %(beam_loc,delay_str,freq_cent))
+		YY = loadtxt('%s/beam_%s_%.3f_YY.txt' %(beam_loc,delay_str,freq_cent))
 		
-		image_kernel =  XX
-		
-		#print(image_kernel)
-		#print(XX)
-		
-		#ax3.imshow(im_gaussian / image_kernel,interpolation='none')
-		
-		#plt.imshow(XX,interpolation='none')
-		#plt.show()
-		
-		#plt.imshow(image_kernel,interpolation='none')
-		#plt.show()
-		
-		kernel_array = image2kernel(image=image_kernel,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
-		
-		#ax4.imshow(imag(kernel_array),interpolation='none')
-		
-		#plt.show()
-		#plt.close()
-		
-		
-		
-		
-		
-		
+		kernel_array = image2kernel(image=XX,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
 				
 	else:
 		kernel_array = array([[1.0]])
