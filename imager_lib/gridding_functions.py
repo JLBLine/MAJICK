@@ -19,6 +19,9 @@ import scipy as sp
 from mwapy import ephem_utils
 from mwapy.pb import primary_beam
 from mwapy.pb import mwa_tile
+from os import environ
+
+MAJICK_DIR = environ['MAJICK_DIR']
 
 D2R = pi/180.0
 R2D = 180.0/pi
@@ -397,7 +400,7 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None,we
 		kernel_array = image2kernel(image=XX,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
 		
 		
-	elif kernel == 'mwa_phase1':
+	elif kernel == 'MWA_phase1':
 		l_extent = 1.0 / u_reso
 		l_reso = l_extent / len(u_sim)
 		n2max = int((l_extent/2) / l_reso)
@@ -405,7 +408,7 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None,we
 		l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
 		
 		##TODO - get this path in a smart way
-		beam_loc = '/home/jline/Documents/time_decorrelation/MAJICK/telescopes/mwa_phase1/primary_beam/data'
+		beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,kernel)
 		XX = loadtxt('%s/beam_%s_%.3f_XX.txt' %(beam_loc,delay_str,freq_cent))
 		YY = loadtxt('%s/beam_%s_%.3f_YY.txt' %(beam_loc,delay_str,freq_cent))
 		

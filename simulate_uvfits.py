@@ -1,26 +1,22 @@
 #!/usr/bin/python
 import optparse
 import matplotlib.pyplot as plt
-#from sys import path
-#path.append('/home/jline/Documents/time_decorrelation/dummy_imager/imager_lib')
-#path.append('/home/jline/Documents/time_decorrelation/dummy_imager/')
 from imager_lib import *
-#import "/home/jline/Documents/time_decorrelation/dummy_imager/imager_lib"
 from time import time
-#from numpy import *
 from generate_gsm_2016 import generate_gsm_2016
 try:
 	import pyfits as fits
 except ImportError:
 	from astropy.io import fits
 from ephem import Observer,degrees
+from os import environ
+
+MAJICK_DIR = environ['MAJICK_DIR']
 	
 D2R = pi/180.0
 R2D = 180.0/pi
 VELC = 299792458.0
 MWA_LAT = -26.7033194444
-
-#MWA_LAT = -26.78347242983789
 
 def enh2xyz(east,north,height,latitiude):
 	sl = sin(latitiude)
@@ -103,8 +99,8 @@ parser.add_option('-b', '--diffuse', default=False, action='store_true',
 parser.add_option('-e', '--base_uvfits', default=False, 
 	help='Base fits file name and location (e.g. /location/file/uvfits_tag) tag to add diffuse model to (not needed if generating uvfits from srclist)')
 
-parser.add_option('-l', '--layout', default='/home/jline/Documents/time_decorrelation/MAJICK/telescopes/mwa_phase1/antenna_locations_mwa-phase1.txt',
-	help='The array layout in local topocentric e,n,h coords - defaults to MWA phase 1')
+parser.add_option('-j', '--telescope', default='MWA_phase1',
+	help='Uses the array layout and primary beam model as stored in MAJICK_DIR/telescopes - defaults to MWA_phase1')
 
 parser.add_option('-i', '--data_loc', default='./data',
 	help='Location to output the uvfits to OR location of uvfits if just adding diffuse model. Default = ./data')
@@ -128,23 +124,10 @@ data_loc = options.data_loc
 
 if data_loc[-1] == '/': data_loc = data_loc[:-1]
 
-#freq_start = 167.035
-#freq_res = 0.04
-#num_freqs = 1
-
-#time_start = 0.0
-#time_res = 2.0
-#num_times = 1
-
-#intial_date = '2013-08-23T17:50:32'
-#srclist = '/home/jline/Documents/time_decorrelation/dummy_imager/oskar_singlesource/srclist_grid.txt'
-##srclist = '/home/jline/Documents/srclists/srclist_puma-v2_complete_1061315448_patch1000.txt'
-
-#tag_name = 'mymodel_single_offzen_orig-u-v-w'
-
 ###---------------------------------------------------##
 ###---------------------------------------------------##
 
+##TODO - make this generic, so you can use any telescope
 ##ephem Observer class, use this to compute LST from the date of the obs 
 MRO = Observer()
 ##Set the observer at Boolardy
@@ -156,18 +139,26 @@ intial_lst = float(MRO.sidereal_time())*R2D
 intial_ra_point = float(MRO.sidereal_time())*R2D
 dec_point = MWA_LAT
 
+
+
+
 ##Get the local topocentric X,Y,Z values for the MWA using the local topocentric e,n,h
 ##values from the antenna locs in MWA_Tools
-anntenna_locs = loadtxt(options.layout)
+
+array_layout = "%s/telescopes/%s/antenna_locations_%s.txt" %(MAJICK_DIR,options.telescope,options.telescope)
+
+anntenna_locs = loadtxt(array_layout)
 X,Y,Z = enh2xyz(anntenna_locs[:,0],anntenna_locs[:,1],anntenna_locs[:,2],MWA_LAT*D2R)
 
-delays = zeros(32)
-##Lookup an mwa_title (I don't really know precisely what it's doing)
-d = mwa_tile.Dipole(type='lookup')
-tile = mwa_tile.ApertureArray(dipoles=[d]*16)
-#delays=repeat(reshape(delays,(1,16)),2,axis=0)
-
-#print srclist
+##TODO - migrate to new beam
+##TODO - get the delays in a smart way
+##TODO - check whether the desired pointing exists in a smart way
+##       when using the MWA beam as a gridding function
+if options.beam:
+	delays = zeros(32)
+	##Lookup an mwa_title (I don't really know precisely what it's doing)
+	d = mwa_tile.Dipole(type='lookup')
+	tile = mwa_tile.ApertureArray(dipoles=[d]*16)
 
 if srclist:
 	try:
@@ -181,7 +172,6 @@ if srclist:
 	for source_info in source_src_info:
 		source = create_calibrator(source_info)
 		sources[source.name] = source
-		#print source.name
 		
 	base_uvfits = fits.open("/home/jline/Documents/time_decorrelation/dummy_imager/oskar_singlesource/data/oskar_single_offzen_167.035_00.uvfits")
 	base_data = base_uvfits[0].data
@@ -189,10 +179,6 @@ if srclist:
 	antenna_table = base_uvfits[1].data
 	antenna_header = base_uvfits[1].header
 	
-##Only open the file if not writing a new one with point sources
-#else:
-
-
 ##Sidereal seconds per solar seconds - ie if 1s passes on
 ##the clock, sky has moved by 1.00274 secs of angle
 SOLAR2SIDEREAL = 1.00274
@@ -254,7 +240,10 @@ for freq in arange(freq_start,freq_start+ freq_res*num_freqs,freq_res):
 			##calculate the beam at each point, as well as extrapolate the source
 			##flux density to the current frequency
 			for name,source in sources.iteritems():
-				weight_by_beam(source=source,freqcent=freq_cent,LST=lst,tile=tile,delays=delays)
+				if options.beam:
+					weight_by_beam(source=source,freqcent=freq_cent,LST=lst,tile=tile,delays=delays,beam=True)
+				else:
+					weight_by_beam(source=source,freqcent=freq_cent,LST=lst,beam=False)
 				
 			##Set out instrument to always point at the same HA, DEC for now
 			##TODO make an option to track an RA, DEC
@@ -262,14 +251,11 @@ for freq in arange(freq_start,freq_start+ freq_res*num_freqs,freq_res):
 			base_header['CRVAL7'] = dec_point
 			base_header['CRVAL4'] = freq_cent
 			
-			#print(ra_point,dec_point,add_time(intial_date,time + (time_res / 2.0)),lst)
-			
-			##Change the date by the time step - this is used
+			##Change the date by the time step - this is used by MAJICK
 			##to get the LST
 			
 			antenna_header['RDATE'] = this_date
 			
-		
 		#print 'srclist has been weighted by freq and beam'
 		
 		##GSM image and uv_data_array are the same for all baselines, for each time and freq
@@ -278,7 +264,6 @@ for freq in arange(freq_start,freq_start+ freq_res*num_freqs,freq_res):
 			uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso)
 			
 		##For each baseline
-		
 		skipped_gsm = 0
 		outside_uv = 0
 		for baseline in xrange(len(base_data)):
@@ -301,7 +286,7 @@ for freq in arange(freq_start,freq_start+ freq_res*num_freqs,freq_res):
 						if time_decor:
 							model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_point,phase_dec=dec_point,LST=lst,x_length=x_length,y_length=y_length,z_length=z_length,time_decor=time_res)
 						else:
-							model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_point,phase_dec=dec_point,LST=lst)
+							model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_point,phase_dec=dec_point,LST=lst,beam=True)
 							
 						uv_data_XX += array([real(model_xxpol),imag(model_xxpol),0.0000])
 						uv_data_YY += array([real(model_yypol),imag(model_yypol),0.0000])
@@ -333,14 +318,14 @@ for freq in arange(freq_start,freq_start+ freq_res*num_freqs,freq_res):
 					if outside: outside_uv += 1
 					
 					#l,m,n = get_lm(ra_point*D2R,ra_phase*D2R, MWA_LAT*D2R, MWA_LAT*D2R)
-					uv_complex_XX = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v, kernel='mwa_phase1',freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim)
+					uv_complex_XX = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v, kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim)
 					PhaseConst = 1j * 2 * pi
 					##Insert a w-term as the FFT doesn't include them??
 					##Inserting the w for zenith pointing where n=1
 					n = 1
 					uv_complex_XX *= exp(PhaseConst * w*n)
 					
-					base_data[baseline][5][0,0,0,0,0,:] += array([real(uv_complex_XX),imag(uv_complex_XX),1.0000])
+					base_data[baseline][5][0,0,0,0,0,:] += array([real(uv_complex_XX),imag(uv_complex_XX),0.0000])
 					#uv_data_YY = base_data[baseline][5][0,0,0,0,1,:]
 				except:
 					skipped_gsm += 1

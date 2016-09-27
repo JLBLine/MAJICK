@@ -215,6 +215,9 @@ def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,phase_dec=None,LST=
 		##Here phase_ra, phase_dec should be zenith
 		l,m,n = get_lm(ra*D2R,phase_ra, dec*D2R, phase_dec)
 		this_vis = (flux * exp(PhaseConst*(u*l + v*m + w*n)))
+
+		##Turn this on to add in phase tracking
+		#this_vis = (flux * exp(PhaseConst*(u*l + v*m + w*(n-1))))
 		
 		##Add in decor if asked for
 		if time_decor:

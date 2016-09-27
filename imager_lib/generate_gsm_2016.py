@@ -99,7 +99,7 @@ def generate_gsm_2016(freq=None,this_date=None,observer=None):
 
 	##resolution is hard coded to 0.8 deg
 	## * 1e+6 because in MJy, * (1/((0.4*np.pi) / 180.0))**2 to go from per sr to per pixel
-	sky_view = np.array(sky_view) * 1e+5 * (((0.8*np.pi) / 180.0))**2
+	sky_view = np.array(sky_view) * 5e+4 * (((0.8*np.pi) / 180.0))**2
 	sky_view[sky_view == -np.inf] = 0
 	
 	l_reso = 2.0 / sky_view.shape[0]
