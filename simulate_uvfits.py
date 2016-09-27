@@ -182,10 +182,13 @@ if srclist:
 ##Sidereal seconds per solar seconds - ie if 1s passes on
 ##the clock, sky has moved by 1.00274 secs of angle
 SOLAR2SIDEREAL = 1.00274
-for freq in arange(freq_start,freq_start+ freq_res*num_freqs,freq_res):
-	for time in arange(time_start,time_start + time_res*num_times,time_res):
+
+freq_range = freq_start + arange(num_freqs)*freq_res
+time_range = time_start + arange(num_times)*time_res
+
+for freq in freq_range:
+	for time in time_range:
 		print freq,time
-		
 		freq_cent = ((freq + freq_res / 2.0)*1e+6)
 		
 		if not srclist:
