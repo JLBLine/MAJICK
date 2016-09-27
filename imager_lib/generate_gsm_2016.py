@@ -3,8 +3,11 @@ import numpy as np
 import optparse, sys, os
 import healpy as hp
 from matplotlib.pyplot import close
+from os import environ
 
-script_path = "/usr/local/gsm2016"
+MAJICK_DIR = environ['MAJICK_DIR']
+
+
 labels = ['Synchrotron', 'CMB', 'HI', 'Dust1', 'Dust2', 'Free-Free']
 n_comp = len(labels)
 kB = 1.38065e-23
@@ -36,8 +39,8 @@ def generate_gsm_2016(freq=None,this_date=None,observer=None):
 	else:
 		op_resolution = 24
         
-	map_ni = np.array([np.fromfile(script_path + '/data/highres_%s_map.bin'%lb, dtype='float32') for lb in labels])
-	spec_nf = np.loadtxt(script_path + '/data/spectra.txt')
+	map_ni = np.array([np.fromfile('%s/imager_lib/gsm_2016_data/highres_%s_map.bin' %(MAJICK_DIR,lb), dtype='float32') for lb in labels])
+	spec_nf = np.loadtxt('%s/imager_lib/gsm_2016_data/spectra.txt' %MAJICK_DIR)
 	nfreq = spec_nf.shape[1]
 
 	left_index = -1
