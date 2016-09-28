@@ -168,34 +168,34 @@ class UVContainer(object):
 				else:
 					uvdata = UVData('%s_%.3f_%02d.uvfits' %(uv_tag,freqs[i],times[j]))
 				
-				import matplotlib.pyplot as plt
-				from mpl_toolkits.axes_grid1 import make_axes_locatable
+				#import matplotlib.pyplot as plt
+				#from mpl_toolkits.axes_grid1 import make_axes_locatable
 			
-				def add_colorbar(im,ax):
-					divider = make_axes_locatable(ax)
-					cax = divider.append_axes("right", size="5%", pad=0.05)
-					cbar = fig.colorbar(im, cax = cax)
+				#def add_colorbar(im,ax):
+					#divider = make_axes_locatable(ax)
+					#cax = divider.append_axes("right", size="5%", pad=0.05)
+					#cbar = fig.colorbar(im, cax = cax)
 				
-				fig = plt.figure(figsize=(10,7))
+				#fig = plt.figure(figsize=(10,7))
 			
-				ax1 = fig.add_subplot(211)
-				ax2 = fig.add_subplot(212)
+				#ax1 = fig.add_subplot(211)
+				#ax2 = fig.add_subplot(212)
 				
-				#print(len(uvdata.data[:,0,0]))
-				#print(len(uvdata.uu))
+				##print(len(uvdata.data[:,0,0]))
+				##print(len(uvdata.uu))
 				
-				im1 = ax1.scatter(uvdata.uu,uvdata.vv,c=uvdata.data[:,0,0],cmap='gnuplot')
-				ax1.set_title('Analytic and works (real)')
-				add_colorbar(im1,ax1)
+				#im1 = ax1.scatter(uvdata.uu,uvdata.vv,c=uvdata.data[:,0,0],cmap='gnuplot')
+				#ax1.set_title('Analytic and works (real)')
+				#add_colorbar(im1,ax1)
 				
-				im2 = ax2.scatter(uvdata.uu,uvdata.vv,c=uvdata.data[:,0,1],cmap='gnuplot')
-				ax2.set_title('From point source image (imag)')
-				add_colorbar(im2,ax2)
+				#im2 = ax2.scatter(uvdata.uu,uvdata.vv,c=uvdata.data[:,0,1],cmap='gnuplot')
+				#ax2.set_title('From point source image (imag)')
+				#add_colorbar(im2,ax2)
 				
-				plt.tight_layout()
+				#plt.tight_layout()
 				
-				fig.savefig('read-in-data.png')
-				plt.close()
+				#fig.savefig('read-in-data.png')
+				#plt.close()
 				
 				
 

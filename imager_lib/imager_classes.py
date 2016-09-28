@@ -160,7 +160,6 @@ class Imager(object):
 					##For each component in the calibrator
 					for pos_ind in xrange(len(cal_source.ras)):
 						
-						
 						ra,dec = cal_source.ras[pos_ind]*D2R,cal_source.decs[pos_ind]*D2R
 						ha_source = central_lst*D2R - ra
 						out_uv.write('#For LST RA DEC HA RA0 DEC0 HA0 (rads) %.10f %.10f %.10f %.10f %.10f %.10f %.10f\n' %(central_lst,ra,dec,ha_source,ra0,dec0,h0))

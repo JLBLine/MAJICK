@@ -2,6 +2,11 @@ __author__ = 'omniscope+jline'
 import numpy as np
 import optparse, sys, os
 import healpy as hp
+
+import matplotlib
+##Protects clusters where no $DISPLAY is set when running PBS/SLURM
+# Force matplotlib to not use any Xwindows backend.
+matplotlib.use('Agg')
 from matplotlib.pyplot import close
 from os import environ
 

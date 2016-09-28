@@ -14,7 +14,7 @@ from cmath import phase,exp
 from sys import exit
 #from astropy.wcs import WCS
 #from time import time
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import scipy as sp
 from mwapy import ephem_utils
 from mwapy.pb import primary_beam

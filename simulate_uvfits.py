@@ -1,6 +1,6 @@
 #!/usr/bin/python
 import optparse
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from imager_lib import *
 from time import time
 from generate_gsm_2016 import generate_gsm_2016
