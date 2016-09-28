@@ -11,6 +11,10 @@ from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,m
 from numpy import abs as np_abs
 from numpy import exp as np_exp
 from cmath import phase,exp
+import matplotlib
+##Protects clusters where no $DISPLAY is set when running PBS/SLURM
+# Force matplotlib to not use any Xwindows backend.
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sys import exit
 from astropy.wcs import WCS
