@@ -123,15 +123,15 @@ class UVData(object):
 		HDU.close()
 		
 class UVContainer(object):
-	def __init__(self,uv_tag=None,freq_start=None,freq_end=None,freq_res=None,time_start=None,time_end=None,time_res=None):
+	def __init__(self,uv_tag=None,freq_start=None,num_freqs=None,freq_res=None,time_start=None,num_times=None,time_res=None):
 		'''An array containing UVData objects in shape = (num time steps, num freq steps'''
 		##TODO do an error check for all required uvfits files
 		##Have a custom error?
 		self.freq_res = freq_res
 		self.time_res = time_res
 		
-		freqs = arange(freq_start,freq_end,freq_res)
-		times = arange(time_start,time_end,time_res)
+		times = time_start + arange(num_times) * time_res
+		freqs = freq_start + arange(num_freqs) * freq_res
 		
 		self.freqs = list(freqs)
 		self.times = list(times)
