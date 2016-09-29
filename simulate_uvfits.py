@@ -83,7 +83,7 @@ parser.add_option('-m', '--num_times',
 parser.add_option('-s', '--srclist', default=False,
 	help='Enter name of srclist from which to add point sources')
 
-parser.add_option('-g', '--beam', default=False,
+parser.add_option('-g', '--beam', default=False, action='store_true',
 	help='Add in the beam to all simulations')
 
 parser.add_option('-d', '--date', default='2000-01-01T00:00:00',
