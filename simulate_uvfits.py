@@ -289,9 +289,15 @@ for freq in freq_range:
 					##Otherwise, proceed
 					else:
 						if time_decor:
-							model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_point,phase_dec=dec_point,LST=lst,x_length=x_length,y_length=y_length,z_length=z_length,time_decor=time_res)
+							if options.beam:
+								model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_point,phase_dec=dec_point,LST=lst,x_length=x_length,y_length=y_length,z_length=z_length,time_decor=time_res,beam=True)
+							else:
+								model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_point,phase_dec=dec_point,LST=lst,x_length=x_length,y_length=y_length,z_length=z_length,time_decor=time_res)
 						else:
-							model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_point,phase_dec=dec_point,LST=lst,beam=True)
+							if options.beam:
+								model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_point,phase_dec=dec_point,LST=lst,beam=True)
+							else:
+								model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_point,phase_dec=dec_point,LST=lst)
 							
 						uv_data_XX += array([real(model_xxpol),imag(model_xxpol),0.0000])
 						uv_data_YY += array([real(model_yypol),imag(model_yypol),0.0000])
