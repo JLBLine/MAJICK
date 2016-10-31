@@ -19,6 +19,7 @@ D2R = pi/180.0
 R2D = 180.0/pi
 VELC = 299792458.0
 MWA_LAT = -26.7033194444
+SOLAR2SIDEREAL = 1.00274
 
 ##ephem Observer class, use this to compute LST from the date of the obs 
 MRO = Observer()
@@ -35,8 +36,23 @@ def get_uvw(X,Y,Z,d,H):
 	return u,v,w
 
 
+def get_uvw_freq(x_length=None,y_length=None,z_length=None,dec=None,ha=None,freq=None):
+	'''Takes the baseline length in meters and uses the frequency'''
+	
+	scale = freq / VELC
+	X = x_length * scale
+	Y = y_length * scale
+	Z = z_length * scale
+	
+	u = sin(ha)*X + cos(ha)*Y
+	v = -sin(dec)*cos(ha)*X + sin(dec)*sin(ha)*Y + cos(dec)*Z
+	w = cos(dec)*cos(ha)*X - cos(dec)*sin(ha)*Y + sin(dec)*Z
+	
+	return u,v,w
+
+
 class UVData(object):
-	def __init__(self,uvfits=None):
+	def __init__(self,uvfits=None,time_res=None):
 		'''A single time and frequency step of uvdata. Includes a dictioary
 		containing all telecope X,Y,Z and antenna pairs from which to calcualte
 		baseline lengths'''
@@ -52,11 +68,18 @@ class UVData(object):
 		self.dec_point = header0['CRVAL7']
 		self.freq = header0['CRVAL4']
 		
+		##TODO is this half a time cadence wrong???
+		##TODO or do we just make sure to always add a half time step??
 		##Reformat date from header into something
 		##readble by Observer to calcualte LST
 		date,time = header1['RDATE'].split('T')
 		MRO.date = '/'.join(date.split('-'))+' '+time
 		self.LST = float(MRO.sidereal_time())*R2D
+		
+		##add on half a time resolution to find the LST
+		##at the centre of this
+		self.central_LST = float(MRO.sidereal_time())*R2D + ((time_res/2.0)*(15.0/3600.0)*SOLAR2SIDEREAL)
+		#print(self.central_LST)
 		
 		#print(self.ra_point,self.dec_point,header1['RDATE'],self.LST)
 
@@ -66,9 +89,8 @@ class UVData(object):
 		self.vv = data0['VV'] * header0['CRVAL4']
 		self.ww = data0['WW'] * header0['CRVAL4']
 		
-		
 		self.antennas = {}
-		xyz = data1['STABXYZ'] * (header0['CRVAL4'] / VELC)
+		xyz = data1['STABXYZ']
 		for i in xrange(len(xyz)):
 			self.antennas['ANT%03d' %(i+1)] = xyz[i]
 		
@@ -77,6 +99,7 @@ class UVData(object):
 		##Found that out from here:
 		##https://www.mrao.cam.ac.uk/~bn204/alma/memo-turb/uvfits.py
 		baselines = data0['BASELINE']
+		self.baselines = baselines
 		self.antenna_pairs = []
 		self.xyz_lengths = []
 		self.uvw_calc = []
@@ -87,10 +110,11 @@ class UVData(object):
 		for baseline in baselines:
 			ant2 = mod(baseline, 256)
 			ant1 = (baseline - ant2)/256
-			
+			##Make the antenna pairs and then scale by the wavelength
 			self.antenna_pairs.append(('ANT%03d' %ant1,'ANT%03d' %ant2))
-			x_length,y_length,z_length = self.antennas['ANT%03d' %ant1] - self.antennas['ANT%03d' %ant2]
+			x_length,y_length,z_length = self.antennas['ANT%03d' %ant1]*(header0['CRVAL4'] / VELC) - self.antennas['ANT%03d' %ant2]*(header0['CRVAL4'] / VELC)
 			self.xyz_lengths.append([x_length,y_length,z_length])
+			
 			#test_xyz.write('%.3f %.3f %.3f\n' %(x_length,y_length,z_length))
 			#self.uvw_calc.append(get_uvw(x_length,y_length,z_length,self.dec_point*D2R,self.LST*D2R - self.ra_point*D2R))
 			#self.uvw_zenith.append(get_uvw(x_length,y_length,z_length,MWA_LAT*D2R,0.0))
@@ -123,7 +147,7 @@ class UVData(object):
 		HDU.close()
 		
 class UVContainer(object):
-	def __init__(self,uv_tag=None,freq_start=None,num_freqs=None,freq_res=None,time_start=None,num_times=None,time_res=None):
+	def __init__(self,uv_tag=None,freq_start=None,num_freqs=None,freq_res=None,time_start=None,num_times=None,time_res=None,add_phase_track=False):
 		'''An array containing UVData objects in shape = (num time steps, num freq steps'''
 		##TODO do an error check for all required uvfits files
 		##Have a custom error?
@@ -138,7 +162,7 @@ class UVContainer(object):
 		self.uv_data = {}
 		self.cal_uv_data = {}
 		self.kernel_params = None
-		
+		self.xyz_lengths_unscaled = []
 		
 		max_us = []
 		max_vs = []
@@ -149,14 +173,23 @@ class UVContainer(object):
 		
 		##Set the phase centre from the ra_point, dec_point from the first time step
 		##TODO get this from somewhere smarter
-		
+		##Also grab the unscaled antenna lengths from the first uvfits file
 		if time_res < 1:
-			self.ra_phase = UVData('%s_%.3f_%05.2f.uvfits' %(uv_tag,freqs[0],times[0])).ra_point
-			self.dec_phase = UVData('%s_%.3f_%05.2f.uvfits' %(uv_tag,freqs[0],times[0])).dec_point
+			first_uvdata = UVData('%s_%.3f_%05.2f.uvfits' %(uv_tag,freqs[0],times[0]),time_res=time_res)
 		else:
-			self.ra_phase = UVData('%s_%.3f_%02d.uvfits' %(uv_tag,freqs[0],times[0])).ra_point
-			self.dec_phase = UVData('%s_%.3f_%02d.uvfits' %(uv_tag,freqs[0],times[0])).dec_point
-			#self.LST = UVData('%s_%.3f_%05.2f.uvfits' %(uv_tag,freqs[0],times[0])).LST
+			first_uvdata = UVData('%s_%.3f_%02d.uvfits' %(uv_tag,freqs[0],times[0]),time_res=time_res)
+			
+		self.ra_phase = first_uvdata.ra_point
+		self.dec_phase = first_uvdata.dec_point
+		antennas = first_uvdata.antennas
+		baselines = first_uvdata.baselines
+		
+		for baseline in baselines:
+			ant2 = mod(baseline, 256)
+			ant1 = (baseline - ant2)/256
+			x_length,y_length,z_length = antennas['ANT%03d' %ant1] - antennas['ANT%03d' %ant2]
+			self.xyz_lengths_unscaled.append([x_length,y_length,z_length])
+		
 		
 		for i in xrange(len(freqs)):
 			for j in xrange(len(times)):
@@ -164,83 +197,42 @@ class UVContainer(object):
 				#print("Loading and rotating uvfits time %03d freq %.3f" %(times[j],freqs[i]))
 				#from subprocess import call
 				if time_res < 1:
-					uvdata = UVData('%s_%.3f_%05.2f.uvfits' %(uv_tag,freqs[i],times[j]))
+					uvdata = UVData('%s_%.3f_%05.2f.uvfits' %(uv_tag,freqs[i],times[j]),time_res=time_res)
 				else:
-					uvdata = UVData('%s_%.3f_%02d.uvfits' %(uv_tag,freqs[i],times[j]))
-				
-				#import matplotlib.pyplot as plt
-				#from mpl_toolkits.axes_grid1 import make_axes_locatable
-			
-				#def add_colorbar(im,ax):
-					#divider = make_axes_locatable(ax)
-					#cax = divider.append_axes("right", size="5%", pad=0.05)
-					#cbar = fig.colorbar(im, cax = cax)
-				
-				#fig = plt.figure(figsize=(10,7))
-			
-				#ax1 = fig.add_subplot(211)
-				#ax2 = fig.add_subplot(212)
-				
-				##print(len(uvdata.data[:,0,0]))
-				##print(len(uvdata.uu))
-				
-				#im1 = ax1.scatter(uvdata.uu,uvdata.vv,c=uvdata.data[:,0,0],cmap='gnuplot')
-				#ax1.set_title('Analytic and works (real)')
-				#add_colorbar(im1,ax1)
-				
-				#im2 = ax2.scatter(uvdata.uu,uvdata.vv,c=uvdata.data[:,0,1],cmap='gnuplot')
-				#ax2.set_title('From point source image (imag)')
-				#add_colorbar(im2,ax2)
-				
-				#plt.tight_layout()
-				
-				#fig.savefig('read-in-data.png')
-				#plt.close()
-				
-				
-
-				###Here we try to phase rotate everything to the first pointing 
-				for k in xrange(len(uvdata.uu)):
-					##Find the u,v,w coordinates for the phase centre for the LST of the given uv data
-					x_length,y_length,z_length = uvdata.xyz_lengths[k]
-					u_phase, v_phase, w_phase = get_uvw(x_length,y_length,z_length,self.dec_phase*D2R,uvdata.LST*D2R - self.ra_phase*D2R)
+					uvdata = UVData('%s_%.3f_%02d.uvfits' %(uv_tag,freqs[i],times[j]),time_res=time_res)
 					
-					##Update the u,v,w data to the u,v,w associated with phase centre
-					uvdata.uu[k] = u_phase
-					uvdata.vv[k] = v_phase
-					uvdata.ww[k] = w_phase
-					
-					##This rotation works if there has been NO PHASE TRACKING IN THE CORRELATOR
-					##If there was phase tracking, would need to undo that, I think by
-					##multiplying by exp(+PhaseConst * w_phase_correlator) - or you just leave
-					##the phase centre as it was lolz
-					##Basically this multiplication sets w to zero in the direction
-					##of your phase centre (the old w[n-1])
-					xx_complex = complex(uvdata.data[k][0,0],uvdata.data[k][0,1])
-					PhaseConst = - 1j * 2 * pi
-					rotate_xx_complex = xx_complex * exp(PhaseConst * w_phase)
-					
-					uvdata.data[k][0,0] = real(rotate_xx_complex)
-					uvdata.data[k][0,1] = imag(rotate_xx_complex)
-					
+				###If the correlator wasn't phase tracking, add in phase tracking
+				####Here we try to phase rotate everything to the first pointing 
 				
-				#fig = plt.figure(figsize=(10,7))
-			
-				#ax1 = fig.add_subplot(211)
-				#ax2 = fig.add_subplot(212)
-				
-				#im1 = ax1.scatter(uvdata.uu,uvdata.vv,c=uvdata.data[:,0,0],cmap='gnuplot')
-				#ax1.set_title('Analytic and works (real)')
-				#add_colorbar(im1,ax1)
-				
-				#im2 = ax2.scatter(uvdata.uu,uvdata.vv,c=uvdata.data[:,0,1],cmap='gnuplot')
-				#ax2.set_title('From point source image (imag)')
-				#add_colorbar(im2,ax2)
-				
-				#plt.tight_layout()
-				
-				#fig.savefig('phase-rotated-data.png')
-				#plt.close()
+				if add_phase_track:
+					for k in xrange(len(uvdata.uu)):
+						##Find the u,v,w coordinates for the phase centre for the LST of the given uv data
+						x_length,y_length,z_length = uvdata.xyz_lengths[k]
+						
+						##central_LST has half the time resolution added to the intial LST for the obs
+						u_phase, v_phase, w_phase = get_uvw(x_length,y_length,z_length,self.dec_phase*D2R,uvdata.central_LST*D2R - self.ra_phase*D2R)
+						
+						##Update the u,v,w data to the u,v,w associated with phase centre
+						uvdata.uu[k] = u_phase
+						uvdata.vv[k] = v_phase
+						uvdata.ww[k] = w_phase
+						
+						##This rotation works if there has been NO PHASE TRACKING IN THE CORRELATOR
+						##If there was phase tracking, would need to undo that, I think by
+						##multiplying by exp(+PhaseConst * w_phase_correlator) - or you just leave
+						##the phase centre as it was lolz
+						##Basically this multiplication sets w to zero in the direction
+						##of your phase centre (the old w[n-1])
+						xx_complex = complex(uvdata.data[k][0,0],uvdata.data[k][0,1])
+						yy_complex = complex(uvdata.data[k][1,0],uvdata.data[k][1,1])
+						PhaseConst = - 1j * 2 * pi
+						rotate_xx_complex = xx_complex * exp(PhaseConst * w_phase)
+						rotate_yy_complex = yy_complex * exp(PhaseConst * w_phase)
+						
+						uvdata.data[k][0,0] = real(rotate_xx_complex)
+						uvdata.data[k][0,1] = imag(rotate_xx_complex)
+						uvdata.data[k][1,0] = real(rotate_yy_complex)
+						uvdata.data[k][1,1] = imag(rotate_yy_complex)
 					
 				max_us.append(uvdata.max_u)
 				max_vs.append(uvdata.max_v)

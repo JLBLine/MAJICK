@@ -30,7 +30,6 @@ def K_RJ2MJysr(K_RJ, nu):#in Kelvin and Hz
     conversion_factor = 2 * (nu / C)**2 * kB
     return  K_RJ * conversion_factor * 1e20#1e-26 for Jy and 1e6 for MJy
 
-
 def generate_gsm_2016(freq=None,this_date=None,observer=None):
 	'''Generates an orthographic view of the 2016 GSM for a given
 	observer, for a given date, and given frequency (MHz)'''
@@ -107,6 +106,7 @@ def generate_gsm_2016(freq=None,this_date=None,observer=None):
 
 	##resolution is hard coded to 0.8 deg
 	## * 1e+6 because in MJy, * (1/((0.4*np.pi) / 180.0))**2 to go from per sr to per pixel
+	##Manually fudged with * 5e+4 based on comparison to real data :-/
 	sky_view = np.array(sky_view) * 5e+4 * (((0.8*np.pi) / 180.0))**2
 	sky_view[sky_view == -np.inf] = 0
 	
