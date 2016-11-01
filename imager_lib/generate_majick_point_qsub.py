@@ -17,6 +17,8 @@ parser.add_option('-m','--metafits', help='Enter name of metafits file to base o
 parser.add_option('-t','--time', help='Enter start,end of sim in seconds from the beginning of the observation (as set by metafits)')
 parser.add_option('-x','--twosec', default=False, help='Enable to force a different time cadence - enter the time in seconds')
 parser.add_option('-c','--beam', default=False, action='store_true', help='Enable to apply beam to simulations')
+parser.add_option('-f','--freq_decor', default=False, action='store_true', help='Enable to switch on frequency decorrelation')
+parser.add_option('-g','--time_decor', default=False, action='store_true', help='Enable to switch on time decorrelation')
 parser.add_option('-p','--phase_centre', default=False, help='Specify phase centre; enter as ra_phase,dec_phase (deg)')
 parser.add_option('-a','--telescope', default='MWA_phase1', help='Enter telescope used for simulation. Default = MWA_phase1')
 parser.add_option('-b','--band_nums', help='Enter band numbers to simulate, separated by a comma eg 1,3,4')
@@ -96,6 +98,10 @@ for band_num in band_nums:
 		sim_command += " --beam"
 	if options.phase_centre:
 		sim_command += " --phase_centre=%s" %options.phase_centre
+	if options.time_decor:
+		sim_command += " --time_decor"
+	if options.freq_decor:
+		sim_command += " --freq_decor"
 
 	file_name = 'qsub_%s_band%02d_t%d-%d.sh' %(options.output_name,band_num,int(tsteps[0]),int(tsteps[-1]))
 	qsub_names.append(file_name)

@@ -402,11 +402,8 @@ for freq in freq_range:
 		
 		int_jd, float_jd = calc_jdcal(this_date)
 		
-		print('intial_date',intial_date,'this_date',this_date)
-		
 		#print 'srclist has been weighted by freq and beam'
 		##GSM image and uv_data_array are the same for all baselines, for each time and freq
-		
 		
 		if srclist:
 	
@@ -562,12 +559,6 @@ for freq in freq_range:
 			base_uvfits[1].header['FREQ'] = freq_cent
 			
 			###MAJICK uses this date to set the LST
-			#dmy, hms = date.split()
-			#day,month,year = map(int,dmy.split('-'))
-			#hour,mins,secs = map(float,hms.split(':'))
-			
-			#rdate = "%d-%02d-%2dT%2d:%2d:%.2f" %(year,month,day,hour,mins,secs)
-			print(this_date)
 			base_uvfits[1].header['RDATE'] = this_date
 
 			## Create hdulist and write out file
