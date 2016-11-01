@@ -31,10 +31,10 @@ def enh2xyz(east,north,height,latitiude):
 	return X,Y,Z
 
 def add_time(date_time,time_step):
-	'''Take the time string format that uvfits uses ('23-08-2013 17:54:32.0'), and add a time time_step (seconds).
+	'''Take the time string format that uvfits uses (DIFFERENT TO OSKAR!! '2013-08-23 17:54:32.0'), and add a time time_step (seconds).
 	Return in the same format - NO SUPPORT FOR CHANGES MONTHS CURRENTLY!!'''
 	date,time = date_time.split('T')
-	day,month,year = map(int,date.split('-'))
+	year,month,day = map(int,date.split('-'))
 	hours,mins,secs = map(float,time.split(':'))
 	##Add time
 	secs += time_step
@@ -57,20 +57,19 @@ def add_time(date_time,time_step):
 			pass
 	else:
 		pass
-	return '%02d-%02d-%dT%d:%02d:%05.2f' %(day,month,year,int(hours),int(mins),secs)
+	return '%d-%d-%dT%d:%02d:%05.2f' %(year,month,day,int(hours),int(mins),secs)
 
 def calc_jdcal(date):
 	dmy, hms = date.split('T')
 	
-	day,month,year = map(int,dmy.split('-'))
+	year,month,day = map(int,dmy.split('-'))
 	hour,mins,secs = map(float,hms.split(':'))
 
 	##For some reason jdcal gives you the date in two pieces
 	##Gives you the time up until midnight of the day
 	jd1,jd2 = gcal2jd(year,month,day)
-	
 	jd3 = (hour + (mins / 60.0) + (secs / 3600.0)) / 24.0
-	
+
 	jd = jd1 + jd2 + jd3
 	
 	##The header of the uvdata file takes the integer, and
@@ -403,7 +402,7 @@ for freq in freq_range:
 		
 		int_jd, float_jd = calc_jdcal(this_date)
 		
-		print(int_jd, float_jd)
+		print('intial_date',intial_date,'this_date',this_date)
 		
 		#print 'srclist has been weighted by freq and beam'
 		##GSM image and uv_data_array are the same for all baselines, for each time and freq
