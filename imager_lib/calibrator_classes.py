@@ -3,12 +3,12 @@ from __future__ import print_function
 from __future__ import absolute_import
 from mwapy import ephem_utils
 from mwapy.pb import primary_beam
-from mwapy.pb import mwa_tile
-from numpy import pi,cos,sin,array,repeat,reshape,sqrt,dot,ones,real,imag,arctan2,zeros,conjugate,linalg,transpose,matrix,identity,arccos,log
+#from mwapy.pb import mwa_tile
+from numpy import pi,cos,sin,array,repeat,reshape,sqrt,dot,ones,real,imag,arctan2,zeros,conjugate,linalg,transpose,matrix,identity,arccos,log,argmin
 from cmath import exp
 from uvdata_classes import *
 from gridding_functions import *
-#from scipy.optimize import leastsq
+from scipy import interpolate
 try:
     from astropy.io import fits
 except ImportError:
@@ -19,6 +19,7 @@ R2D = 180.0/pi
 VELC = 299792458.0
 MWA_LAT = -26.7033194444
 #MWA_LAT = -26.703319
+beam_freqs = arange(49920000,327680000+1.28e6,1.28e+6)
 
 ##Class to store calibrator source information with - set to lists
 ##to store component info in the same place
@@ -130,7 +131,7 @@ def create_calibrator(cali_info=None):
 			source.shapelet_coeffs.append(coeffs)
 	return source
 
-def weight_by_beam(source=None,freqcent=None,LST=None,tile=None,delays=None,beam=False):
+def weight_by_beam(source=None,freqcent=None,LST=None,delays=None,beam=False):
 	'''Takes a Cali_source() class and extrapolates to the given
 	frequency, then weights by the beam'''
 	
@@ -180,17 +181,33 @@ def weight_by_beam(source=None,freqcent=None,LST=None,tile=None,delays=None,beam
 				za=(90-Alt)*pi/180
 				az=Az*pi/180
 				
-				##Get the tile response for the given sky position,frequency and delay
-				##Needs za,az in 2D arrays ([[]] means (1,1)) for za,az
-				j = tile.getResponse(array([[az]]),array([[za]]),freqcent,delays=delays)
-				##Convert that in to XX,YY responses
-				vis = mwa_tile.makeUnpolInstrumentalResponse(j,j)
-				##This is the power in XX,YY - this is taken from primary_beam.MWA_Tile_advanced - prints out
-				##lots of debugging messages so have pulled it out of the function
-				XX,YY = vis[:,:,0,0].real,vis[:,:,1,1].real
+				##The beam only has a spectral resolution of 1.28MHz. The known beam
+				##model frequencies are defined as beam_freqs at top of file. Find the
+				##beam points within 2 course bands above and below, interpolate over 
+				##them, and then find out the beam value at the desired frequency
+				lower_freq = freqcent - 3*1.28e+6
+				upper_freq = freqcent + 3*1.28e+6
 				
-				source.XX_beam.append(XX[0][0])
-				source.YY_beam.append(YY[0][0])
+				pos_lowest = argmin(np_abs(beam_freqs - lower_freq))
+				pos_highest = argmin(np_abs(beam_freqs - upper_freq))
+				
+				freqs = beam_freqs[pos_lowest:pos_highest+1]
+				
+				this_XX = []
+				this_YY = []
+				
+				for freq in freqs:
+					XX,YY = primary_beam.MWA_Tile_full_EE([[za]], [[az]], freq=freq, delays=delays, zenithnorm=True, power=True, interp=False)
+					this_XX.append(XX[0][0])
+					this_YY.append(YY[0][0])
+		
+				f_XX = interpolate.interp1d(freqs,this_XX,kind='cubic')
+				f_YY = interpolate.interp1d(freqs,this_YY,kind='cubic')
+				interp_XX = f_XX(freqcent)
+				interp_YY = f_YY(freqcent)
+				
+				source.XX_beam.append(interp_XX)
+				source.YY_beam.append(interp_YY)
 		
 def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,phase_dec=None,LST=None,x_length=None,y_length=None,z_length=None,time_decor=False,freq_decor=False,beam=False,freq=None):   ##,sources=None
 	# V(u,v) = integral(I(l,m)*exp(i*2*pi*(ul+vm)) dl dm)

@@ -63,7 +63,7 @@ class Imager(object):
 		self.freq_int = freq_int
 		self.kernel = kernel
 		
-	def sum_visi_at_source(self,predict_tdecor=False,verbose=False,apply_tdecor=False):
+	def sum_visi_at_source(self,predict_tdecor=False,verbose=False,apply_tdecor=False,beam=False):
 		try:
 			cali_src_info = open(self.srclist,'r').read().split('ENDSOURCE')
 			del cali_src_info[-1]
@@ -172,14 +172,17 @@ class Imager(object):
 				for cal_name,cal_source in calibrator_sources.iteritems():
 					##If actually get beam stuff, change tile and delays below
 					##Currently this gives us the extrapolated fluxes at our current frequency
-					weight_by_beam(source=cal_source,freqcent=central_frequency, LST=central_lst,tile='meh',delays='wah')
+					
+					if beam == True:
+						weight_by_beam(source=cal_source,freqcent=central_frequency, LST=central_lst,delays=zeros((2,16)),beam=True)
+					else:
+						weight_by_beam(source=cal_source,freqcent=central_frequency, LST=central_lst)
 
 					##If verbose, print out what is being seen at the command line	
 					if verbose: print("For SOURCE %s:" %cal_name)
 					
 					##For each component in the calibrator
 					for pos_ind in xrange(len(cal_source.ras)):
-						
 						ra,dec = cal_source.ras[pos_ind]*D2R,cal_source.decs[pos_ind]*D2R
 						ha_source = central_lst*D2R - ra
 						#print('ra,dec,central_lst,ha_source',ra,dec,central_lst,ha_source)
@@ -229,7 +232,11 @@ class Imager(object):
 								l,m,n = get_lm(ra,ra0,dec,dec0)
 								tdecorr_factor = tdecorr_phasetrack(X=x_length_scale,Y=y_length_scale,Z=z_length_scale,
 									d0=dec0,h0=h0,l=l,m=m,n=n,time_int=self.time_int)
-								tdecorr_flux = cal_source.extrap_fluxs[pos_ind] * tdecorr_factor
+								
+								if beam:
+									tdecorr_flux = cal_source.extrap_fluxs[pos_ind] * tdecorr_factor * cal_source.XX_beam[pos_ind]
+								else:
+									tdecorr_flux = cal_source.extrap_fluxs[pos_ind] * tdecorr_factor
 								##Times two because also grid conjugates of data so double amounts
 								sum_tdecor += (2 * tdecorr_flux)
 								sum_tdecor_factor += (2 * tdecorr_factor)
@@ -240,12 +247,19 @@ class Imager(object):
 								
 								fdecorr_factor = fdecorr_nophasetrack(u=avg_uu[visi_ind],v=avg_vv[visi_ind],w=avg_ww[visi_ind],
 									l=l,m=m,n=n,chan_width=self.uv_container.freq_res*1e6*num_freq_avg,freq=central_frequency,phasetrack=True)
-								fdecorr_flux = cal_source.extrap_fluxs[pos_ind] * fdecorr_factor
+								
+								if beam:
+									fdecorr_flux = cal_source.extrap_fluxs[pos_ind] * fdecorr_factor * cal_source.XX_beam[pos_ind]
+								else:
+									fdecorr_flux = cal_source.extrap_fluxs[pos_ind] * fdecorr_factor
 								##Times two because also grid conjugates of data so double amounts
 								sum_fdecor += (2 * fdecorr_flux)
 								sum_fdecor_factor += (2 * fdecorr_factor)
 								
-								overall_decor = cal_source.extrap_fluxs[pos_ind] * fdecorr_factor * tdecorr_factor
+								if beam:
+									overall_decor = cal_source.extrap_fluxs[pos_ind] * fdecorr_factor * tdecorr_factor * cal_source.XX_beam[pos_ind]
+								else:
+									overall_decor = cal_source.extrap_fluxs[pos_ind] * fdecorr_factor * tdecorr_factor
 								sum_overall += (2 * overall_decor)
 								
 								###=========================================================================
@@ -314,10 +328,17 @@ class Imager(object):
 							
 						##If verbose, print out what is being seen at the command line	
 						if verbose:
-							if predict_tdecor:	
-								print("At %.2f %.2f see %.10f expect %.10f (%.10f with t and f decor)" %(cal_source.ras[pos_ind],cal_source.decs[pos_ind],real(sum_uvw_cal),cal_source.extrap_fluxs[pos_ind],sum_overall))
+							if predict_tdecor:
+								if beam:
+									print("At %.2f %.2f see %.10f expect %.10f (%.10f with t and f decor)" %(cal_source.ras[pos_ind],cal_source.decs[pos_ind],real(sum_uvw_cal),cal_source.extrap_fluxs[pos_ind]*cal_source.XX_beam[pos_ind],sum_overall))
+								else:
+									print("At %.2f %.2f see %.10f expect %.10f (%.10f with t and f decor)" %(cal_source.ras[pos_ind],cal_source.decs[pos_ind],real(sum_uvw_cal),cal_source.extrap_fluxs[pos_ind],sum_overall))
 							else:
-								print("At %.2f %.2f see %.10f expect %.10f" %(cal_source.ras[pos_ind],cal_source.decs[pos_ind],real(sum_uvw_cal),cal_source.extrap_fluxs[pos_ind]))
+								if beam:
+									print("At %.2f %.2f see %.10f expect %.10f" %(cal_source.ras[pos_ind],cal_source.decs[pos_ind],real(sum_uvw_cal),cal_source.extrap_fluxs[pos_ind]* cal_source.XX_beam[pos_ind]))
+								else:
+									print("At %.2f %.2f see %.10f expect %.10f" %(cal_source.ras[pos_ind],cal_source.decs[pos_ind],real(sum_uvw_cal),cal_source.extrap_fluxs[pos_ind]))
+								
 				sum_pixels['%03d_%03d' %(time_start,freq_start)] = sum_pixel
 						
 		print("Finished sum_visi_at_source ----------------------")
