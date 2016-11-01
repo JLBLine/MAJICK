@@ -2,7 +2,7 @@
 from subprocess import call
 from sys import exit
 from optparse import OptionParser
-from numpy import pi, arange
+from numpy import pi, arange, ceil
 import os
 
 R2D = 180.0 / pi
@@ -74,6 +74,8 @@ if not os.path.exists(wd):
     os.makedirs(wd)
 os.chdir(wd)
 
+qsub_names = []
+
 for band_num in band_nums:
 	
 	base_freq = ((band_num - 1)*(b_width/24.0)) + low_freq
@@ -96,18 +98,36 @@ for band_num in band_nums:
 		sim_command += " --phase_centre=%s" %options.phase_centre
 
 	file_name = 'qsub_%s_band%02d_t%d-%d.sh' %(options.output_name,band_num,int(tsteps[0]),int(tsteps[-1]))
+	qsub_names.append(file_name)
 	out_file = open(file_name,'w+')
 	out_file.write('#!/bin/bash\n')
 	out_file.write('#PBS -l nodes=1\n')
-	out_file.write('#PBS -l walltime=10:00:00\n')
+	
+	##Takes 2min with 100 source per freq / time
+	##For 32 freqs that means 64 mins per time step
+	##Round up to 70 for safety
+	
+	num_time_steps = len(tsteps)
+	hours = num_time_steps * (70.0 / 60.0)
+	hours = ceil(hours)
+	
+	out_file.write('#PBS -l walltime=%02d:00:00\n' %int(hours) )
 	out_file.write('#PBS -m e\n')
 	out_file.write('#PBS -q sstar\n')
 	out_file.write('#PBS -A p048_astro\n')
 
-	out_file.write('source /lustre/projects/p048_astro/MWA/bin/activate\n')
 	out_file.write('source /home/jline/.bash_profile\n')
 	out_file.write('cd %s\n' %wd)
 	out_file.write(sim_command+'\n')
 	
 	out_file.close()
+	
+os.chdir(cwd)
 
+##Write out a controlling bash script to launch all the jobs
+out_file = open('run_all_majicksim_%s.sh' %options.output_name,'w+')
+out_file.write('#!/bin/bash\n')
+for qsub in qsub_names:
+	out_file.write('MAIN_RUN=$(qsub %s | cut -d "." -f 1)\n' %qsub)
+	out_file.write('echo $MAIN_RUN\n')
+out_file.close()
