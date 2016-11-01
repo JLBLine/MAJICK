@@ -128,6 +128,6 @@ os.chdir(cwd)
 out_file = open('run_all_majicksim_%s.sh' %options.output_name,'w+')
 out_file.write('#!/bin/bash\n')
 for qsub in qsub_names:
-	out_file.write('MAIN_RUN=$(qsub %s | cut -d "." -f 1)\n' %qsub)
+	out_file.write('MAIN_RUN=$(qsub ./qsub_majick/%s | cut -d "." -f 1)\n' %qsub)
 	out_file.write('echo $MAIN_RUN\n')
 out_file.close()
