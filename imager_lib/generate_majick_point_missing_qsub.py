@@ -72,9 +72,6 @@ tsteps = arange(start_tstep,end_tstep,dump_time)
 ##Find all of the successfully simulated files
 found_files = glob('%s/%s*.uvfits' %(options.data_loc,options.output_name))
 
-print found_files
-
-
 ##Find out where we are and setup a place to store the qsub scripts
 
 cwd = os.getcwd()
@@ -95,14 +92,12 @@ for band_num in band_nums:
 	
 	for freq in freq_range:
 		for time in tsteps:
-			print freq,time
 			if dump_time < 1:
 				uvfits_name = "%s/%s_%.3f_%05.2f.uvfits" %(options.data_loc,options.output_name,freq,time)
 			else:
 				uvfits_name = "%s/%s_%.3f_%02d.uvfits" %(options.data_loc,options.output_name,freq,int(time))
 			#print uvfits_name
 			if uvfits_name not in found_files:
-				print 'here'
 				this_date = add_time_uvfits(intial_date,time)
 				
 				sim_command = "python $MAJICK_DIR/simulate_uvfits.py"
