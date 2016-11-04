@@ -4,6 +4,7 @@ import optparse
 #from imager_lib import *
 from calibrator_classes import *
 from gridding_functions import *
+from uvdata_classes import *
 from time import time
 from generate_gsm_2016 import generate_gsm_2016
 try:
@@ -12,7 +13,6 @@ except ImportError:
 	from astropy.io import fits
 from ephem import Observer,degrees
 from os import environ
-from jdcal import gcal2jd
 from numpy import floor
 
 MAJICK_DIR = environ['MAJICK_DIR']
@@ -29,182 +29,6 @@ def enh2xyz(east,north,height,latitiude):
 	Y = east
 	Z = north*cl + height*sl
 	return X,Y,Z
-
-def add_time(date_time,time_step):
-	'''Take the time string format that uvfits uses (DIFFERENT TO OSKAR!! '2013-08-23 17:54:32.0'), and add a time time_step (seconds).
-	Return in the same format - NO SUPPORT FOR CHANGES MONTHS CURRENTLY!!'''
-	date,time = date_time.split('T')
-	year,month,day = map(int,date.split('-'))
-	hours,mins,secs = map(float,time.split(':'))
-	##Add time
-	secs += time_step
-	if secs >= 60.0:
-		##Find out full minutes extra and take away
-		ext_mins = int(secs / 60.0)
-		secs -= 60*ext_mins
-		mins += ext_mins
-		if mins >= 60.0:
-			ext_hours = int(mins / 60.0)
-			mins -= 60*ext_hours
-			hours += ext_hours
-			if hours >= 24.0:
-				ext_days = int(hours / 24.0)
-				hours -= 24*ext_days
-				day += ext_days
-			else:
-				pass
-		else:
-			pass
-	else:
-		pass
-	return '%d-%d-%dT%d:%02d:%05.2f' %(year,month,day,int(hours),int(mins),secs)
-
-def calc_jdcal(date):
-	dmy, hms = date.split('T')
-	
-	year,month,day = map(int,dmy.split('-'))
-	hour,mins,secs = map(float,hms.split(':'))
-
-	##For some reason jdcal gives you the date in two pieces
-	##Gives you the time up until midnight of the day
-	jd1,jd2 = gcal2jd(year,month,day)
-	jd3 = (hour + (mins / 60.0) + (secs / 3600.0)) / 24.0
-
-	jd = jd1 + jd2 + jd3
-	
-	##The header of the uvdata file takes the integer, and
-	##then the fraction goes into the data array for PTYPE5
-	
-	return floor(jd), jd - floor(jd)
-
-def create_uvfits(u_coords=None, v_coords=None, w_coords=None, central_frequency=None, ra_point=None, dec_point=None, oskar_vis_tag=None, output_uvfits_name=None,date=None):
-	
-	int_jd, float_jd = calc_jdcal(date)
-	
-	template_file = fits.open(template_uvfits)
-	template_data = template_file[0].data
-	antenna_table = template_file[1].data
-
-	# Create uv structure by hand, probably there is a better way of doing this but the uvfits structure is kind of finicky
-	n_freq = 1 # only one frequency per uvfits file as read by the RTS
-
-	n_data = len(template_data)
-
-	v_container = zeros((n_data,1,1,1,n_freq,4,3))
-	uu = zeros(n_data)
-	vv = zeros(n_data)
-	ww = zeros(n_data)
-	baseline = zeros(n_data)
-	date_array = zeros(n_data)
-	
-	xx_us,xx_vs,xx_ws,xx_res,xx_ims = get_osk_data(oskar_vis_tag=oskar_vis_tag,polarisation='XX')
-	yy_us,yy_vs,yy_ws,yy_res,yy_ims = get_osk_data(oskar_vis_tag=oskar_vis_tag,polarisation='YY')
-	xy_us,xy_vs,xy_ws,xy_res,xy_ims = get_osk_data(oskar_vis_tag=oskar_vis_tag,polarisation='XY')
-	yx_us,yx_vs,yx_ws,yx_res,yx_ims = get_osk_data(oskar_vis_tag=oskar_vis_tag,polarisation='YX')
-
-
-	for i in range(len(template_data)):
-		xx_list = [xx_res[i],xx_ims[i],1.0]
-		yy_list = [yy_res[i],yy_ims[i],1.0]
-		xy_list = [xy_res[i],xy_ims[i],1.0]
-		yx_list = [yx_res[i],yx_ims[i],1.0]
-		
-		uvdata = [xx_list,yy_list,xy_list,yx_list]
-		uvdata = array(uvdata)
-		uvdata.shape = (4,3)
-		
-		v_container[i] = uvdata
-		uu[i] = xx_us[i] / freq_cent
-		vv[i] = xx_vs[i] / freq_cent
-		ww[i] = xx_ws[i] / freq_cent
-		baseline[i] = template_data[i][3]
-		date_array[i] = float_jd
-		rotate_phase(xx_ws[i],v_container[i][0,0,0,0,:,:])
-
-	##UU, VV, WW don't actually get read in by RTS - might be an issue with
-	##miriad/wsclean however, as it looks like oskar w = negative maps w
-	uvparnames = ['UU','VV','WW','BASELINE','DATE']
-	parvals = [uu,vv,ww,baseline,date_array]
-		
-	uvhdu = fits.GroupData(v_container,parnames=uvparnames,pardata=parvals,bitpix=-32)
-	uvhdu = fits.GroupsHDU(uvhdu)
-
-	###Try to copy MAPS as sensibly as possible
-	uvhdu.header['CTYPE2'] = 'COMPLEX '
-	uvhdu.header['CRVAL2'] = 1.0
-	uvhdu.header['CRPIX2'] = 1.0
-	uvhdu.header['CDELT2'] = 1.0
-
-	##This means it's linearly polarised
-	uvhdu.header['CTYPE3'] = 'STOKES '
-	uvhdu.header['CRVAL3'] = -5.0
-	uvhdu.header['CRPIX3'] =  1.0
-	uvhdu.header['CDELT3'] = -1.0
-
-	uvhdu.header['CTYPE4'] = 'FREQ'
-	###Oskar/CASA for some reason adds half of the frequency specified in the 
-	###simulation setup. I think this is happens because CASA is unsure
-	###what 'channel' the data is - when you run with multiple channels, they
-	###are all set to spw = 0, but the output freq is correct. Somethig funky anyway
-	###For one channel, set by hand
-	uvhdu.header['CRVAL4'] = central_frequency ##(sim freq + half channel width)
-	uvhdu.header['CRPIX4'] = template_file[0].header['CRPIX4']
-	uvhdu.header['CDELT4'] = template_file[0].header['CDELT4']
-
-	uvhdu.header['CTYPE5'] = template_file[0].header['CTYPE5']
-	uvhdu.header['CRVAL5'] = template_file[0].header['CRVAL5']
-	uvhdu.header['CRPIX5'] = template_file[0].header['CRPIX5']
-	uvhdu.header['CDELT5'] = template_file[0].header['CDELT5']
-
-	uvhdu.header['CTYPE6'] = template_file[0].header['CTYPE6']
-	uvhdu.header['CRVAL6'] = template_file[0].header['CRVAL6']
-	uvhdu.header['CRPIX6'] = template_file[0].header['CRPIX6']
-	uvhdu.header['CDELT6'] = template_file[0].header['CDELT6']
-
-	uvhdu.header['CTYPE7'] = template_file[0].header['CTYPE7']
-	uvhdu.header['CRVAL7'] = template_file[0].header['CRVAL7']
-	uvhdu.header['CRPIX7'] = template_file[0].header['CRPIX7']
-	uvhdu.header['CDELT7'] = template_file[0].header['CDELT7']
-
-	## Write the parameters scaling explictly because they are omitted if default 1/0
-
-	uvhdu.header['PSCAL1'] = 1.0
-	uvhdu.header['PZERO1'] = 0.0
-	uvhdu.header['PSCAL2'] = 1.0
-	uvhdu.header['PZERO2'] = 0.0
-	uvhdu.header['PSCAL3'] = 1.0
-	uvhdu.header['PZERO3'] = 0.0
-	uvhdu.header['PSCAL4'] = 1.0
-	uvhdu.header['PZERO4'] = 0.0
-	uvhdu.header['PSCAL5'] = 1.0
-
-	uvhdu.header['PZERO5'] = float(int_jd)
-
-	uvhdu.header['OBJECT']  = 'Undefined'                                                           
-	uvhdu.header['OBSRA']   = ra_point                                          
-	uvhdu.header['OBSDEC']  = dec_point
-	
-	##ANTENNA TABLE MODS======================================================================
-
-	template_file[1].header['FREQ'] = freq_cent
-	
-	##MAJICK uses this date to set the LST
-	dmy, hms = date.split()
-	day,month,year = map(int,dmy.split('-'))
-	hour,mins,secs = map(float,hms.split(':'))
-	
-	rdate = "%d-%02d-%2dT%2d:%2d:%.2f" %(year,month,day,hour,mins,secs)
-	
-	template_file[1].header['RDATE'] = rdate
-
-	## Create hdulist and write out file
-	hdulist = fits.HDUList(hdus=[uvhdu,template_file[1]])
-	hdulist.writeto(output_uvfits_name,clobber=True)
-	template_file.close()
-	hdulist.close()
-
-
-
 
 ##---------------------------------------------------##
 ##----------OBSERVATION SETTINGS----------------------##
@@ -345,8 +169,8 @@ SOLAR2SIDEREAL = 1.00274
 freq_range = freq_start + arange(num_freqs)*freq_res
 time_range = time_start + arange(num_times)*time_res
 
-for freq in freq_range:
-	for time in time_range:
+for time in time_range:
+	for freq in freq_range:
 		print freq,time
 		freq_cent = ((freq + freq_res / 2.0)*1e+6)
 		
@@ -398,7 +222,7 @@ for freq in freq_range:
 		
 		##DO NOT ADD HALF A TIME RESOLUTION
 		##make sure this all happens when reading in the uvfits
-		this_date = add_time(intial_date,time)# + (time_res / 2.0))
+		this_date = add_time_uvfits(intial_date,time)# + (time_res / 2.0))
 		
 		int_jd, float_jd = calc_jdcal(this_date)
 		
@@ -518,8 +342,11 @@ for freq in freq_range:
 			uvhdu.header['CRPIX4'] = base_uvfits[0].header['CRPIX4']
 			uvhdu.header['CDELT4'] = freq_res * 1e+6
 			
+			##Not sure why we even have axis - something to do with CASA
+			##making the first ever OSKAR fits file probably
+			
 			uvhdu.header['CTYPE5'] = base_uvfits[0].header['CTYPE5']
-			uvhdu.header['CRVAL5'] = base_uvfits[0].header['CTYPE5']
+			uvhdu.header['CRVAL5'] = base_uvfits[0].header['CRVAL5']
 			uvhdu.header['CRPIX5'] = base_uvfits[0].header['CRPIX5']
 			uvhdu.header['CDELT5'] = base_uvfits[0].header['CDELT5']
 

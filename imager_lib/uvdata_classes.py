@@ -5,13 +5,18 @@ from __future__ import absolute_import
 #from calibrator_classes import *
 #from imager_classes import *
 #from uvdata_classes import *
-from astropy.io import fits
+#from astropy.io import fits
+try:
+	import pyfits as fits
+except ImportError:
+	from astropy.io import fits
 from ephem import Observer,degrees
-from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,imag
+from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,imag,floor
 from numpy import abs as np_abs
 from numpy import exp as np_exp
 from cmath import phase,exp
 from sys import exit
+from jdcal import gcal2jd
 #from astropy.wcs import WCS
 #from time import time
 
@@ -50,6 +55,52 @@ def get_uvw_freq(x_length=None,y_length=None,z_length=None,dec=None,ha=None,freq
 	
 	return u,v,w
 
+def add_time_uvfits(date_time,time_step):
+	'''Take the time string format that uvfits uses (DIFFERENT TO OSKAR!! '2013-08-23 17:54:32.0'), and add a time time_step (seconds).
+	Return in the same format - NO SUPPORT FOR CHANGES MONTHS CURRENTLY!!'''
+	date,time = date_time.split('T')
+	year,month,day = map(int,date.split('-'))
+	hours,mins,secs = map(float,time.split(':'))
+	##Add time
+	secs += time_step
+	if secs >= 60.0:
+		##Find out full minutes extra and take away
+		ext_mins = int(secs / 60.0)
+		secs -= 60*ext_mins
+		mins += ext_mins
+		if mins >= 60.0:
+			ext_hours = int(mins / 60.0)
+			mins -= 60*ext_hours
+			hours += ext_hours
+			if hours >= 24.0:
+				ext_days = int(hours / 24.0)
+				hours -= 24*ext_days
+				day += ext_days
+			else:
+				pass
+		else:
+			pass
+	else:
+		pass
+	return '%d-%d-%dT%d:%02d:%05.2f' %(year,month,day,int(hours),int(mins),secs)
+
+def calc_jdcal(date):
+	dmy, hms = date.split('T')
+	
+	year,month,day = map(int,dmy.split('-'))
+	hour,mins,secs = map(float,hms.split(':'))
+
+	##For some reason jdcal gives you the date in two pieces
+	##Gives you the time up until midnight of the day
+	jd1,jd2 = gcal2jd(year,month,day)
+	jd3 = (hour + (mins / 60.0) + (secs / 3600.0)) / 24.0
+
+	jd = jd1 + jd2 + jd3
+	
+	##The header of the uvdata file takes the integer, and
+	##then the fraction goes into the data array for PTYPE5
+	return floor(jd), jd - floor(jd)
+
 
 class UVData(object):
 	def __init__(self,uvfits=None,time_res=None):
@@ -58,21 +109,17 @@ class UVData(object):
 		baseline lengths'''
 		self.uvfits = uvfits
 		HDU = fits.open(uvfits)
-		data0 = HDU[0].data
-		header0 = HDU[0].header
-		data1 = HDU[1].data
-		header1 = HDU[1].header
 
 		##Find the pointing centre
-		self.ra_point = header0['CRVAL6']
-		self.dec_point = header0['CRVAL7']
-		self.freq = header0['CRVAL4']
+		self.ra_point = HDU[0].header['CRVAL6']
+		self.dec_point = HDU[0].header['CRVAL7']
+		self.freq = HDU[0].header['CRVAL4']
 		
 		##TODO is this half a time cadence wrong???
 		##TODO or do we just make sure to always add a half time step??
 		##Reformat date from header into something
 		##readble by Observer to calcualte LST
-		date,time = header1['RDATE'].split('T')
+		date,time = HDU[1].header['RDATE'].split('T')
 		MRO.date = '/'.join(date.split('-'))+' '+time
 		self.LST = float(MRO.sidereal_time())*R2D
 		
@@ -81,16 +128,16 @@ class UVData(object):
 		self.central_LST = float(MRO.sidereal_time())*R2D + ((time_res/2.0)*(15.0/3600.0)*SOLAR2SIDEREAL)
 		#print(self.central_LST)
 		
-		#print(self.ra_point,self.dec_point,header1['RDATE'],self.LST)
+		#print(self.ra_point,self.dec_point,HDU[1].header['RDATE'],self.LST)
 
 		##Requires u,v,w in units of wavelength, stored in seconds
 		##(u * c) / (c / freq) = u * freq
-		self.uu = data0['UU'] * header0['CRVAL4']
-		self.vv = data0['VV'] * header0['CRVAL4']
-		self.ww = data0['WW'] * header0['CRVAL4']
+		self.uu = HDU[0].data['UU'].copy() * HDU[0].header['CRVAL4']
+		self.vv = HDU[0].data['VV'].copy() * HDU[0].header['CRVAL4']
+		self.ww = HDU[0].data['WW'].copy() * HDU[0].header['CRVAL4']
 		
 		self.antennas = {}
-		xyz = data1['STABXYZ']
+		xyz = HDU[1].data['STABXYZ'].copy()
 		for i in xrange(len(xyz)):
 			self.antennas['ANT%03d' %(i+1)] = xyz[i]
 		
@@ -98,7 +145,7 @@ class UVData(object):
 		##subarray/100.)
 		##Found that out from here:
 		##https://www.mrao.cam.ac.uk/~bn204/alma/memo-turb/uvfits.py
-		baselines = data0['BASELINE']
+		baselines = HDU[0].data['BASELINE'].copy()
 		self.baselines = baselines
 		self.antenna_pairs = []
 		self.xyz_lengths = []
@@ -112,7 +159,7 @@ class UVData(object):
 			ant1 = (baseline - ant2)/256
 			##Make the antenna pairs and then scale by the wavelength
 			self.antenna_pairs.append(('ANT%03d' %ant1,'ANT%03d' %ant2))
-			x_length,y_length,z_length = self.antennas['ANT%03d' %ant1]*(header0['CRVAL4'] / VELC) - self.antennas['ANT%03d' %ant2]*(header0['CRVAL4'] / VELC)
+			x_length,y_length,z_length = self.antennas['ANT%03d' %ant1]*(HDU[0].header['CRVAL4'] / VELC) - self.antennas['ANT%03d' %ant2]*(HDU[0].header['CRVAL4'] / VELC)
 			self.xyz_lengths.append([x_length,y_length,z_length])
 			
 			#test_xyz.write('%.3f %.3f %.3f\n' %(x_length,y_length,z_length))
@@ -123,7 +170,7 @@ class UVData(object):
 		##TODO read in 'CRVAL3' to determine data shape
 		##and set num_polar
 		self.num_polar = 4
-		self.data = data0['DATA'][:,0,0,0,0,:,:]
+		self.data = HDU[0].data['DATA'][:,0,0,0,0,:,:].copy()
 		
 		self.max_u = self.uu.max()
 		self.max_v = self.vv.max()
@@ -136,14 +183,8 @@ class UVData(object):
 		##a copy of the hdu everytime you reference it, and so
 		##HDU.close() doesn't shut everything down - you can quite
 		##easily end up with two many HDUs open
-		del data0
-		del header0
-		del data1
-		del header1
 		del HDU[0].data
-		#del HDU[0].header
 		del HDU[1].data
-		#del HDU[1].header
 		HDU.close()
 		
 class UVContainer(object):
