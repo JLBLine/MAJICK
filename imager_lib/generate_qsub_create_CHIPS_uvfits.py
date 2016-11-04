@@ -71,7 +71,7 @@ for band_num in band_nums:
 	out_file.write('#!/bin/bash\n')
 	out_file.write('#PBS -l nodes=1\n')
 	
-	out_file.write('#PBS -l walltime=00:10:00\n')
+	out_file.write('#PBS -l walltime=00:30:00\n')
 	out_file.write('#PBS -m e\n')
 	out_file.write('#PBS -q sstar\n')
 	out_file.write('#PBS -A p048_astro\n')
