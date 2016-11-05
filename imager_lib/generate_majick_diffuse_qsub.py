@@ -23,7 +23,7 @@ parser.add_option('-p','--phase_centre', default=False, help='Specify phase cent
 parser.add_option('-a','--telescope', default='MWA_phase1', help='Enter telescope used for simulation. Default = MWA_phase1')
 parser.add_option('-b','--band_nums', help='Enter band numbers to simulate, separated by a comma eg 1,3,4')
 parser.add_option('-i', '--data_loc', default='./data',	help='Location to output the uvfits to OR location of uvfits if just adding diffuse model. Default = ./data')
-parser.add_option('-b','--base_uvfits', help='Enter srclist to base sky model on')
+parser.add_option('-e','--base_uvfits', help='Enter srclist to base sky model on')
 
 options, args = parser.parse_args()
 debug = options.debug
