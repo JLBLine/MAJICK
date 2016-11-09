@@ -110,12 +110,12 @@ for band_num in band_nums:
 	out_file.write('#!/bin/bash\n')
 	out_file.write('#PBS -l nodes=1\n')
 	
-	##Takes 2min with 100 source per freq / time
-	##For 32 freqs that means 64 mins per time step
-	##Round up to 70 for safety
+	##Takes 3min with 100 source per freq / time
+	##For 32 freqs that means 96 mins per time step
+	##Round up to 100 for safety
 	
 	num_time_steps = len(tsteps)
-	hours = num_time_steps * (70.0 / 60.0)
+	hours = num_time_steps * (100.0 / 60.0)
 	hours = ceil(hours)
 	
 	out_file.write('#PBS -l walltime=%02d:00:00\n' %int(hours) )
