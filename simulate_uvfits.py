@@ -416,6 +416,7 @@ for time in time_range:
 				antenna_header = base_uvfits[1].header
 			
 			for baseline in xrange(len(base_data)):
+			#for baseline in range(len(base_data)-200,len(base_data)-199):
 				#print 'Adding GSM 2016'
 				##Due to the resolution of the GSM not all baselines will fall on the u,v
 				##plane (u_extent = 1 / l_reso), so skip those that fail
@@ -432,11 +433,15 @@ for time in time_range:
 					
 					#if outside: outside_uv += 1
 					
-					#l,m,n = get_lm(ra_point*D2R,ra_phase*D2R, MWA_LAT*D2R, MWA_LAT*D2R)
-					uv_complex_XX,uv_complex_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v, kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim)
+					#l,m,n = get_lm(ra_point*D2R,, MWA_LAT*D2R, MWA_LAT*D2R)
+					
+					phase_centre = [ra_phase*D2R,dec_phase*D2R]
+					#print 'here'
+					uv_complex_XX,uv_complex_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v, kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline],phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,freq_decor=freq_decor)
 					PhaseConst = 1j * 2 * pi
 					##Insert a w-term as the FFT doesn't include them??
 					##Inserting the w for zenith pointing where n=1
+					#print 'now here'
 					
 					##TODO - is this phase tracking case? Or add in an option for phase tracking??
 					n = 1

@@ -7,7 +7,7 @@ from __future__ import absolute_import
 from uvdata_classes import *
 #from astropy.io import fits
 #from ephem import Observer,degrees
-from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,linspace,sinc,repeat,reshape,loadtxt
+from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,linspace,sinc,repeat,reshape,loadtxt,nan_to_num
 from numpy import abs as np_abs
 from numpy import exp as np_exp
 from cmath import phase,exp
@@ -416,7 +416,7 @@ def convert_image_lm2uv(image=None,l_reso=None):
 
 
 
-def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None,weights=None, kernel='none',kernel_params=None, conjugate=False,central_lst=None,time_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_cent=None,beam_image=None,delay_str="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",u_sim=None,v_sim=None,image=None,u_reso=None):
+def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, weights=None, kernel='none',kernel_params=None, conjugate=False,central_lst=None,time_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_cent=None,beam_image=None,delay_str="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",u_sim=None,v_sim=None,image=None,u_reso=None,freq_decor=False,freq_int=None):
 	'''A reverse gridded - takes a grid of uv data (must be square!!), and then samples the 
 	u,v data at the given u,v coords, using the desired kerrnel'''
 	
@@ -436,34 +436,19 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None,we
 		##To directly create guassian kernel in u,v space
 		#kernel_array = gaussian(sig_x=sig_x,sig_y=sig_y,x_offset=u_off,y_offset=v_off,gridsize=51)
 		
-		#l_extent = num_samples * l_reso
-		#n2max = int((l_extent/2) / l_reso)
-		###Create a meshgrid to sample over whole l,m range with default 31 samples
-		#l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
-		
-		
 		l_extent = 1.0 / u_reso
 		l_reso = l_extent / len(u_sim)
 		n2max = int((l_extent/2) / l_reso)
 		l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
 		
 		##Calculate the gaussian caused in image space due to desired params of gridding gaussian in u,v
-		image_kernel = image_gaussian(kernel_sig_x=sig_x,kernel_sig_y=sig_y,l_mesh=l_mesh,m_mesh=m_mesh,cell_reso=u_reso)
-		##FT the image kernel to create the gridding kernel
-		kernel_array_XX = image2kernel(image=image_kernel,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
-		kernel_array_YY = kernel_array_XX
+		#image_kernel = 
+		image_XX = image_gaussian(kernel_sig_x=sig_x,kernel_sig_y=sig_y,l_mesh=l_mesh,m_mesh=m_mesh,cell_reso=u_reso)
+		image_YY = image_XX
 		
-	elif kernel=='mwa_beam':
-		
-		XX,YY = beam_image
-		l_extent = 1.0 / u_reso
-		l_reso = l_extent / len(u_sim)
-		n2max = int((l_extent/2) / l_reso)
-		##Create a meshgrid to sample over whole l,m range with default 31 samples
-		
-		l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
-		kernel_array_XX = image2kernel(image=XX,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
-		kernel_array_YY = image2kernel(image=YY,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
+		###FT the image kernel to create the gridding kernel
+		#kernel_array_XX = image2kernel(image=image_kernel,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
+		#kernel_array_YY = kernel_array_XX
 		
 	elif kernel == 'MWA_phase1':
 		l_extent = 1.0 / u_reso
@@ -473,59 +458,65 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None,we
 		l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
 		
 		beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,kernel)
-		XX = loadtxt('%s/beam_%s_%.3f_XX.txt' %(beam_loc,delay_str,freq_cent))
-		YY = loadtxt('%s/beam_%s_%.3f_YY.txt' %(beam_loc,delay_str,freq_cent))
+		image_XX = loadtxt('%s/beam_%s_%.3f_XX.txt' %(beam_loc,delay_str,freq_cent))
+		image_YY = loadtxt('%s/beam_%s_%.3f_YY.txt' %(beam_loc,delay_str,freq_cent))
 		
-		kernel_array_XX = image2kernel(image=XX,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
-		kernel_array_YY = image2kernel(image=YY,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
-		
-		
-	elif kernel == 'MWA_phase1+gaussian':
-		l_extent = 1.0 / u_reso
-		l_reso = l_extent / len(u_sim)
-		n2max = int((l_extent/2) / l_reso)
-		##Create a meshgrid to sample over whole l,m range with default 31 samples
-		l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
-		
-		beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,'MWA_phase1')
-		XX = loadtxt('%s/beam_%s_%.3f_XX.txt' %(beam_loc,delay_str,freq_cent))
-		YY = loadtxt('%s/beam_%s_%.3f_YY.txt' %(beam_loc,delay_str,freq_cent))
-		
-		kernel_params = [2.0,2.0]
-		sig_x,sig_y = kernel_params
-		##opposite gaussian that was used to grid with: should mitigate gaussian gridding effects
-		image_inv_gauss = 1 / image_gaussian(kernel_sig_x=sig_x,kernel_sig_y=sig_y,l_mesh=l_mesh,m_mesh=m_mesh,cell_reso=u_reso)
-		
-		kernel_array_XX = image2kernel(image=XX*image_inv_gauss,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
-		kernel_array_YY = image2kernel(image=YY*image_inv_gauss,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
-		
-	elif kernel == 'inv_gaussian':
-		l_extent = 1.0 / u_reso
-		l_reso = l_extent / len(u_sim)
-		n2max = int((l_extent/2) / l_reso)
-		##Create a meshgrid to sample over whole l,m range with default 31 samples
-		l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
-		
-		kernel_params = [2.0,2.0]
-		sig_x,sig_y = kernel_params
-		
-		##opposite gaussian that was used to grid with: should mitigate gaussian gridding effects
-		
-		image_gauss = image_gaussian(kernel_sig_x=sig_x,kernel_sig_y=sig_y,l_mesh=l_mesh,m_mesh=m_mesh,cell_reso=u_reso)
-		
-		#image_gauss *= image_gauss > 1e-12
-		image_inv_gauss = 1 / image_gauss
-		
-		image_inv_gauss *= image_inv_gauss < 1/1e-1
-		
-		kernel_array_XX = image2kernel(image_inv_gauss,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
-		kernel_array_YY = kernel_array_XX
-				
 	else:
-		kernel_array_XX,kernel_array_YY = array([[complex(1,0)]]),array([[complex(1,0)]])
+		print("You haven't entered a correct degridding kernel option")
+		
+	#else:
+		#kernel_array_XX,kernel_array_YY = array([[complex(1,0)]]),array([[complex(1,0)]])
 		
 	##TODO - add in time decorrelation that would be introduced by correlator here
+	
+	if time_decor:
+		ra0,dec0 = phase_centre
+		h0 = central_lst - ra0
+		X,Y,Z = xyz_lengths
 		
+		n_mesh = sqrt(1 - (l_mesh*l_mesh + m_mesh*m_mesh))
+		
+		##Outside l**2 + m**2 = 1 is unphysical, so we get nans
+		##Turn nans into 0s here
+		n_mesh = nan_to_num(n_mesh)
+		
+		##Find a mask based on where the l,m coords are physical
+		n_mask = (l_mesh*l_mesh + m_mesh*m_mesh) <= 1
+		
+		image_time = (tdecorr_phasetrack(X=X,Y=Y,Z=Z,d0=dec0*D2R,h0=h0*D2R,l=l_mesh,m=m_mesh,n=n_mesh,time_int=time_int))
+		
+		##Apply mask to image_time
+		image_time *= n_mask
+		
+		image_XX *= image_time
+		image_YY *= image_time
+		
+	if freq_decor:
+		#print('ooosh')
+		ra0,dec0 = phase_centre
+		h0 = central_lst - ra0
+		X,Y,Z = xyz_lengths
+		
+		n_mesh = sqrt(1 - (l_mesh*l_mesh + m_mesh*m_mesh))
+		
+		##Outside l**2 + m**2 = 1 is unphysical, so we get nans
+		##Turn nans into 0s here
+		n_mesh = nan_to_num(n_mesh)
+		
+		##Find a mask based on where the l,m coords are physical
+		n_mask = (l_mesh*l_mesh + m_mesh*m_mesh) <= 1
+		
+		u,v,w = get_uvw(X,Y,Z,dec0*D2R,h0*D2R)
+		image_freq = fdecorr_nophasetrack(u=u,v=v,w=w,l=l_mesh,m=m_mesh,n=n_mesh,chan_width=freq_int*1e6,freq=freq_cent,phasetrack=True)
+		
+		image_freq *= n_mask
+		
+		image_XX *= image_freq
+		image_YY *= image_freq
+		
+	kernel_array_XX = image2kernel(image_XX,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
+	kernel_array_YY = image2kernel(image_YY,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
+	
 	##Grab the u,v data point that you want using the given kernel
 	sim_complex_XX = apply_kernel(uv_data_array=uv_data_array,u_ind=u_ind,v_ind=v_ind,kernel=kernel_array_XX)
 	sim_complex_YY = apply_kernel(uv_data_array=uv_data_array,u_ind=u_ind,v_ind=v_ind,kernel=kernel_array_YY)
