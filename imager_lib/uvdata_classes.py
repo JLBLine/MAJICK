@@ -84,7 +84,7 @@ def add_time_uvfits(date_time,time_step):
 		pass
 	return '%d-%d-%dT%d:%02d:%05.2f' %(year,month,day,int(hours),int(mins),secs)
 
-def calc_jdcal(date):
+def calc_jdcal_old(date):
 	dmy, hms = date.split('T')
 	
 	year,month,day = map(int,dmy.split('-'))
@@ -100,6 +100,26 @@ def calc_jdcal(date):
 	##The header of the uvdata file takes the integer, and
 	##then the fraction goes into the data array for PTYPE5
 	return floor(jd), jd - floor(jd)
+
+def calc_jdcal(date):
+	dmy, hms = date.split('T')
+	
+	year,month,day = map(int,dmy.split('-'))
+	hour,mins,secs = map(float,hms.split(':'))
+
+	##For some reason jdcal gives you the date in two pieces
+	##Gives you the time up until midnight of the day
+	jd1,jd2 = gcal2jd(year,month,day)
+	jd3 = (hour + (mins / 60.0) + (secs / 3600.0)) / 24.0
+
+	jd = jd1 + jd2 + jd3
+	
+	jd_day = jd1 + floor(jd2)
+	jd_fraction = (jd2 - floor(jd2)) + jd3
+	
+	##The header of the uvdata file takes the integer, and
+	##then the fraction goes into the data array for PTYPE5
+	return jd_day, jd_fraction
 
 
 class UVData(object):
