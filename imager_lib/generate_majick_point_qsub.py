@@ -24,6 +24,7 @@ parser.add_option('-a','--telescope', default='MWA_phase1', help='Enter telescop
 parser.add_option('-b','--band_nums', help='Enter band numbers to simulate, separated by a comma eg 1,3,4')
 parser.add_option('-i', '--data_loc', default='./data',	help='Location to output the uvfits to OR location of uvfits if just adding diffuse model. Default = ./data')
 parser.add_option('-s','--srclist', help='Enter srclist to base sky model on')
+parser.add_option('-z','--fix_beam', default=False, action='store_true', help='Enable to switch on fixed beam observation')
 
 options, args = parser.parse_args()
 debug = options.debug
@@ -102,6 +103,8 @@ for band_num in band_nums:
 		sim_command += " --time_decor"
 	if options.freq_decor:
 		sim_command += " --freq_decor"
+	if options.fix_beam:
+		sim_command += " --fix_beam"
 
 	file_name = 'qsub_%s_band%02d_t%d-%d.sh' %(options.output_name,band_num,int(tsteps[0]),int(tsteps[-1]))
 	qsub_names.append(file_name)

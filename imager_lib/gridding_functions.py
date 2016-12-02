@@ -416,7 +416,7 @@ def convert_image_lm2uv(image=None,l_reso=None):
 
 
 
-def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, weights=None, kernel='none',kernel_params=None, conjugate=False,central_lst=None,time_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_cent=None,beam_image=None,delay_str="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",u_sim=None,v_sim=None,image=None,u_reso=None,freq_decor=False,freq_int=None):
+def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, weights=None, kernel='none',kernel_params=None, conjugate=False,central_lst=None,time_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_cent=None,beam_image=None,delay_str="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",u_sim=None,v_sim=None,image=None,u_reso=None,freq_decor=False,freq_int=None,fix_beam=False):
 	'''A reverse gridded - takes a grid of uv data (must be square!!), and then samples the 
 	u,v data at the given u,v coords, using the desired kerrnel'''
 	
@@ -458,8 +458,14 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
 		l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
 		
 		beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,kernel)
-		image_XX = loadtxt('%s/beam_%s_%.3f_XX.txt' %(beam_loc,delay_str,freq_cent))
-		image_YY = loadtxt('%s/beam_%s_%.3f_YY.txt' %(beam_loc,delay_str,freq_cent))
+		
+		if fix_beam:
+			##If using CHIPS in fix beam mode, set to 186.235MHz (+0.02 for half channel width)
+			image_XX = loadtxt('%s/beam_%s_186255000.000_XX.txt' %(beam_loc,delay_str))
+			image_YY = loadtxt('%s/beam_%s_186255000.000_YY.txt' %(beam_loc,delay_str))
+		else:
+			image_XX = loadtxt('%s/beam_%s_%.3f_XX.txt' %(beam_loc,delay_str,freq_cent))
+			image_YY = loadtxt('%s/beam_%s_%.3f_YY.txt' %(beam_loc,delay_str,freq_cent))
 		
 	else:
 		print("You haven't entered a correct degridding kernel option")

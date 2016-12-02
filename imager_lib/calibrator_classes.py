@@ -131,7 +131,7 @@ def create_calibrator(cali_info=None):
 			source.shapelet_coeffs.append(coeffs)
 	return source
 
-def weight_by_beam(source=None,freqcent=None,LST=None,delays=None,beam=False):
+def weight_by_beam(source=None,freqcent=None,LST=None,delays=None,beam=False,fix_beam=False):
 	'''Takes a Cali_source() class and extrapolates to the given
 	frequency, then weights by the beam'''
 	
@@ -181,33 +181,39 @@ def weight_by_beam(source=None,freqcent=None,LST=None,delays=None,beam=False):
 				za=(90-Alt)*pi/180
 				az=Az*pi/180
 				
-				##The beam only has a spectral resolution of 1.28MHz. The known beam
-				##model frequencies are defined as beam_freqs at top of file. Find the
-				##beam points within 2 course bands above and below, interpolate over 
-				##them, and then find out the beam value at the desired frequency
-				lower_freq = freqcent - 3*1.28e+6
-				upper_freq = freqcent + 3*1.28e+6
+				if fix_beam:
+					##If using CHIPS in fix_beam mode, force beam to 186.235MHz
+					XX,YY = primary_beam.MWA_Tile_full_EE([[za]], [[az]], freq=186.235e+6, delays=delays, zenithnorm=True, power=True, interp=False)
+					final_XX,final_YY = XX[0][0],YY[0][0]
+				else:
+					##The beam only has a spectral resolution of 1.28MHz. The known beam
+					##model frequencies are defined as beam_freqs at top of file. Find the
+					##beam points within 2 course bands above and below, interpolate over 
+					##them, and then find out the beam value at the desired frequency
+					lower_freq = freqcent - 3*1.28e+6
+					upper_freq = freqcent + 3*1.28e+6
+					
+					pos_lowest = argmin(np_abs(beam_freqs - lower_freq))
+					pos_highest = argmin(np_abs(beam_freqs - upper_freq))
+					
+					freqs = beam_freqs[pos_lowest:pos_highest+1]
+					
+					this_XX = []
+					this_YY = []
+					
+					for freq in freqs:
+						XX,YY = primary_beam.MWA_Tile_full_EE([[za]], [[az]], freq=freq, delays=delays, zenithnorm=True, power=True, interp=False)
+						this_XX.append(XX[0][0])
+						this_YY.append(YY[0][0])
+					
+					##interpolate over all XX,YY
+					f_XX = interpolate.interp1d(freqs,this_XX,kind='cubic')
+					f_YY = interpolate.interp1d(freqs,this_YY,kind='cubic')
+					final_XX = f_XX(freqcent)
+					final_YY = f_YY(freqcent)
 				
-				pos_lowest = argmin(np_abs(beam_freqs - lower_freq))
-				pos_highest = argmin(np_abs(beam_freqs - upper_freq))
-				
-				freqs = beam_freqs[pos_lowest:pos_highest+1]
-				
-				this_XX = []
-				this_YY = []
-				
-				for freq in freqs:
-					XX,YY = primary_beam.MWA_Tile_full_EE([[za]], [[az]], freq=freq, delays=delays, zenithnorm=True, power=True, interp=False)
-					this_XX.append(XX[0][0])
-					this_YY.append(YY[0][0])
-		
-				f_XX = interpolate.interp1d(freqs,this_XX,kind='cubic')
-				f_YY = interpolate.interp1d(freqs,this_YY,kind='cubic')
-				interp_XX = f_XX(freqcent)
-				interp_YY = f_YY(freqcent)
-				
-				source.XX_beam.append(interp_XX)
-				source.YY_beam.append(interp_YY)
+				source.XX_beam.append(final_XX)
+				source.YY_beam.append(final_YY)
 		
 def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,phase_dec=None,LST=None,x_length=None,y_length=None,z_length=None,time_decor=False,freq_decor=False,beam=False,freq=None):   ##,sources=None
 	# V(u,v) = integral(I(l,m)*exp(i*2*pi*(ul+vm)) dl dm)
@@ -271,18 +277,16 @@ def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,phase_dec=None,LST=
 
 def model_vis_phasetrack(u=None,v=None,w=None,source=None,phase_ra=None,
 		phase_dec=None,LST=None,x_length=None,y_length=None,z_length=None,
-		time_decor=False,freq_decor=False,beam=False,freq=None):   ##,sources=None
+		time_decor=False,freq_decor=False,beam=False,freq=None,time_int=None,
+		chan_width=None,fix_beam=False):   ##,sources=None
 	# V(u,v) = integral(I(l,m)*exp(i*2*pi*(ul+vm)) dl dm)
 	vis_XX = complex(0,0)
 	vis_YY = complex(0,0)
 	sign = +1
 	PhaseConst = 1j * 2 * pi * sign
 	
-	tot_decor = 0
-
 	phase_ra *= D2R
 	phase_dec *= D2R
-
 	##For each component in the source
 	for i in xrange(len(source.ras)):
 		
@@ -297,18 +301,18 @@ def model_vis_phasetrack(u=None,v=None,w=None,source=None,phase_ra=None,
 
 		##Add in decor if asked for
 		if time_decor:
-			tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=phase_dec,h0=phase_ha,l=l,m=m,n=n,time_int=time_decor)
+			tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=phase_dec,h0=phase_ha,l=l,m=m,n=n,time_int=time_int)
 			this_vis *= tdecor
-			tot_decor += tdecor
 			
 		##Add in decor if asked for
 		if freq_decor:
-			fdecor = fdecorr_nophasetrack(u=u,v=v,w=w,l=l,m=m,n=n,chan_width=freq_decor,freq=freq,phasetrack=True)
+			fdecor = fdecorr_nophasetrack(u=u,v=v,w=w,l=l,m=m,n=n,chan_width=chan_width,freq=freq,phasetrack=True)
 			this_vis *= fdecor
 	
 		if beam:
 			vis_XX += (this_vis * source.XX_beam[i])
 			vis_YY += (this_vis * source.YY_beam[i])
+
 		else:
 			vis_XX += this_vis
 			vis_YY += this_vis

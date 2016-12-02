@@ -35,56 +35,59 @@ def enh2xyz(east,north,height,latitiude):
 
 parser = optparse.OptionParser()
 
+parser.add_option('-a', '--time_decor', default=False, action='store_true',
+	help='Add to include time_decorrelation in the simulation')
+
+parser.add_option('-b', '--diffuse', default=False, action='store_true',
+	help='Add to include the 2016 gsm sky model')
+
+parser.add_option('-c', '--tag_name', 
+	help='Enter tag name for output uvfits files')
+
+parser.add_option('-d', '--date', default='2000-01-01T00:00:00',
+	help="Enter date to start the observation on (YYYY-MM-DDThh:mm:ss), default='2000-01-01T00:00:00'")
+
+parser.add_option('-e', '--base_uvfits', default=False, 
+	help='Base fits file name and location (e.g. /location/file/uvfits_tag) tag to add diffuse model to (not needed if generating uvfits from srclist)')
+
 parser.add_option('-f', '--freq_start',
 	help='Enter lowest frequency (MHz) to simulate - this is lower band edge i.e. for freq_res=0.04, freq_start=167.035 will be simulated at 167.055')
-	
+
+parser.add_option('-g', '--beam', default=False, action='store_true',
+	help='Add in the beam to all simulations')
+
+parser.add_option('-i', '--data_loc', default='./data',
+	help='Location to output the uvfits to OR location of uvfits if just adding diffuse model. Default = ./data')
+
+parser.add_option('-j', '--telescope', default='MWA_phase1',
+	help='Uses the array layout and primary beam model as stored in MAJICK_DIR/telescopes - defaults to MWA_phase1')
+
+parser.add_option('-k', '--fix_beam', default=False, action='store_true',
+	help='Forces the MWA beam to be fixed to 186.235MHz, to be used in conjection with CHIPS_FIXBEAM')
+
+parser.add_option('-m', '--num_times', 
+	help='Enter number of times steps to simulate')
+
 parser.add_option('-n', '--num_freqs',
 	help='Enter number of frequency channels to simulate')
 
-parser.add_option('-y', '--freq_res', default=0.04,
-	help='Enter frequency resolution (MHz) of observations, default=0.04')
-	
+parser.add_option('-p', '--phase_centre', default=False,
+	help='Phase centre of the observation in degrees as RA,DEC - as a default tracks the intial zenith point')
+
+parser.add_option('-s', '--srclist', default=False,
+	help='Enter name of srclist from which to add point sources')
+
 parser.add_option('-t', '--time_start', 
 	help='Enter lowest time offset from start date to simulate (s)')
 
 parser.add_option('-x', '--time_res', default=2.0,
 	help='Enter time resolution (s) of observations, default=2.0')
-	
-parser.add_option('-m', '--num_times', 
-	help='Enter number of times steps to simulate')
 
-parser.add_option('-s', '--srclist', default=False,
-	help='Enter name of srclist from which to add point sources')
-
-parser.add_option('-g', '--beam', default=False, action='store_true',
-	help='Add in the beam to all simulations')
-
-parser.add_option('-d', '--date', default='2000-01-01T00:00:00',
-	help="Enter date to start the observation on (YYYY-MM-DDThh:mm:ss), default='2000-01-01T00:00:00'")
-
-parser.add_option('-c', '--tag_name', 
-	help='Enter tag name for output uvfits files')
-
-parser.add_option('-a', '--time_decor', default=False, action='store_true',
-	help='Add to include time_decorrelation in the simulation')
+parser.add_option('-y', '--freq_res', default=0.04,
+	help='Enter frequency resolution (MHz) of observations, default=0.04')
 
 parser.add_option('-z', '--freq_decor', default=False, action='store_true',
 	help='Add to include freq decorrelation in the simulation')
-
-parser.add_option('-b', '--diffuse', default=False, action='store_true',
-	help='Add to include the 2016 gsm sky model')
-
-parser.add_option('-e', '--base_uvfits', default=False, 
-	help='Base fits file name and location (e.g. /location/file/uvfits_tag) tag to add diffuse model to (not needed if generating uvfits from srclist)')
-
-parser.add_option('-j', '--telescope', default='MWA_phase1',
-	help='Uses the array layout and primary beam model as stored in MAJICK_DIR/telescopes - defaults to MWA_phase1')
-
-parser.add_option('-i', '--data_loc', default='./data',
-	help='Location to output the uvfits to OR location of uvfits if just adding diffuse model. Default = ./data')
-
-parser.add_option('-p', '--phase_centre', default=False,
-	help='Phase centre of the observation in degrees as RA,DEC - as a default tracks the intial zenith point')
 
 options, args = parser.parse_args()
 
@@ -223,14 +226,12 @@ for time in time_range:
 		##DO NOT ADD HALF A TIME RESOLUTION
 		##make sure this all happens when reading in the uvfits
 		this_date = add_time_uvfits(intial_date,time)# + (time_res / 2.0))
-		
 		int_jd, float_jd = calc_jdcal(this_date)
 		
 		#print 'srclist has been weighted by freq and beam'
 		##GSM image and uv_data_array are the same for all baselines, for each time and freq
 		
 		if srclist:
-	
 			# Create uv structure by hand, probably there is a better way of doing this but the uvfits structure is kind of finicky
 			n_freq = 1 # only one frequency per uvfits file as read by the RTS
 			n_data = len(base_data)
@@ -242,14 +243,8 @@ for time in time_range:
 			baselines_array = zeros(n_data)
 			date_array = zeros(n_data)
 			
-			##TODO Weight each source by the beam pattern - do this to
-			##calculate the beam at each point, as well as extrapolate the source
-			##flux density to the current frequency
 			for name,source in sources.iteritems():
-				if options.beam:
-					weight_by_beam(source=source,freqcent=freq_cent,LST=lst,delays=delays,beam=True)
-				else:
-					weight_by_beam(source=source,freqcent=freq_cent,LST=lst,beam=False)
+				weight_by_beam(source=source,freqcent=freq_cent,LST=lst,delays=delays,beam=options.beam,fix_beam=options.fix_beam)
 			
 			for baseline in xrange(len(base_data)):
 				#print 'Simulating baseline %04d' %baseline
@@ -270,32 +265,9 @@ for time in time_range:
 						pass
 					##Otherwise, proceed
 					else:
-						if time_decor and freq_decor:
-							if options.beam:
-								model_xxpol,model_yypol = model_vis_phasetrack(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
-											x_length=x_length,y_length=y_length,z_length=z_length,freq_decor=freq_res*1e+6,freq=freq_cent,time_decor=time_res,beam=True)
-							else:
-								model_xxpol,model_yypol = model_vis_phasetrack(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
-											x_length=x_length,y_length=y_length,z_length=z_length,freq_decor=freq_res*1e+6,freq=freq_cent,time_decor=time_res)
-						elif time_decor:
-							if options.beam:
-								model_xxpol,model_yypol = model_vis_phasetrack(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
-											x_length=x_length,y_length=y_length,z_length=z_length,time_decor=time_res,beam=True)
-							else:
-								model_xxpol,model_yypol = model_vis_phasetrack(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
-											x_length=x_length,y_length=y_length,z_length=z_length,time_decor=time_res)
-						elif freq_decor:
-							if options.beam:
-								model_xxpol,model_yypol = model_vis_phasetrack(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
-											x_length=x_length,y_length=y_length,z_length=z_length,freq_decor=freq_res*1e+6,freq=freq_cent,beam=True)
-							else:
-								model_xxpol,model_yypol = model_vis_phasetrack(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
-											x_length=x_length,y_length=y_length,z_length=z_length,freq_decor=freq_res*1e+6,freq=freq_cent)
-						else:
-							if options.beam:
-								model_xxpol,model_yypol = model_vis_phasetrack(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,beam=True)
-							else:
-								model_xxpol,model_yypol = model_vis_phasetrack(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst)
+						model_xxpol,model_yypol = model_vis_phasetrack(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
+							x_length=x_length,y_length=y_length,z_length=z_length,freq_decor=freq_decor,freq=freq_cent,time_decor=time_decor,
+							time_int=time_res,chan_width=freq_res*1e+6,beam=options.beam)
 							
 						uv_data_XX += array([real(model_xxpol),imag(model_xxpol),0.0000])
 						uv_data_YY += array([real(model_yypol),imag(model_yypol),0.0000])
@@ -431,13 +403,13 @@ for time in time_range:
 					if u < u_sim.min() or u > u_sim.max(): outside = True
 					if v < v_sim.min() or v > v_sim.max(): outside = True
 					
-					#if outside: outside_uv += 1
-					
-					#l,m,n = get_lm(ra_point*D2R,, MWA_LAT*D2R, MWA_LAT*D2R)
-					
 					phase_centre = [ra_phase*D2R,dec_phase*D2R]
 					#print 'here'
-					uv_complex_XX,uv_complex_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v, kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline],phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,freq_decor=freq_decor)
+					uv_complex_XX,uv_complex_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
+						kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline],
+						phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
+						freq_decor=freq_decor,fix_beam=options.fix_beam)
+					
 					PhaseConst = 1j * 2 * pi
 					##Insert a w-term as the FFT doesn't include them??
 					##Inserting the w for zenith pointing where n=1
