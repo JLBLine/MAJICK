@@ -7,7 +7,7 @@ from __future__ import absolute_import
 from uvdata_classes import *
 #from astropy.io import fits
 #from ephem import Observer,degrees
-from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,linspace,sinc,repeat,reshape,loadtxt,nan_to_num
+from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,linspace,sinc,repeat,reshape,loadtxt,nan_to_num,ones
 from numpy import abs as np_abs
 from numpy import exp as np_exp
 from cmath import phase,exp
@@ -133,6 +133,7 @@ def sample_image_coords(n2max=None,l_reso=None,num_samples=KERNEL_SIZE):
 	
 	return l_mesh, m_mesh
 
+#@profile
 def image2kernel(image=None,cell_reso=None,u_off=0.0,v_off=0.0,l_mesh=None,m_mesh=None):
 	'''Takes an input image array, and FTs to create a kernel
 	Uses the u_off and v_off (given in pixels values), cell resolution
@@ -171,6 +172,26 @@ def get_lm(ra,ra0,dec,dec0):
 	
 	return l,m,n
 
+def do_sinc(x=None):
+	'''In-built numpy sinc function is slooooow'''
+	##If zero dividing by zero so have an if test
+	##TODO this breaks with an array - I think we should never
+	##hit a situation where x == 0 but ya never know
+	
+	if type(x) == ndarray:
+		##Numpy is faster if we have a 2D array
+		sinc_x = sinc(x)
+	##Otherwise for just a number, sin(x) / x is quicker
+	else:
+		if x == 0:
+			sinc_x = 1
+		else:
+			sinc_x = sin(pi*x) / (pi*x)
+			
+	#sinc_x = sinc(x)
+			
+	return sinc_x
+
 def tdecorr_phasetrack(X=None,Y=None,Z=None,d0=None,h0=None,l=None,m=None,n=None,time_int=None):
 	'''Find the time decorrelation factor at a specific l,m,n given the X,Y,Z length coords
 	of a baseline in wavelengths, phase tracking at dec and hour angle d0, h0
@@ -179,14 +200,14 @@ def tdecorr_phasetrack(X=None,Y=None,Z=None,d0=None,h0=None,l=None,m=None,n=None
 	part2 = m*(sin(d0)*sin(h0)*X + sin(d0)*cos(h0)*Y)
 	part3 = (n-1)*(-cos(d0)*sin(h0)*X - cos(d0)*cos(h0)*Y)
 	nu_pt = W_E*(part1+part2+part3)
-	D_t = sinc(nu_pt*time_int)
+	D_t = do_sinc(nu_pt*time_int)
 	return D_t
 
 def tdecorr_nophasetrack(u=None,d=None,H=None,t=None):
 	'''Calculates the time decorrelation factor using u, at a given
 	sky position and time intergration'''
 	nu_fu=W_E*cos(d)*u
-	D_t=sinc(nu_fu*t)
+	D_t=do_sinc(nu_fu*t)
 	return D_t
 
 def fdecorr_nophasetrack(u=None,v=None,w=None,l=None,m=None,n=None,chan_width=None,freq=None,phasetrack=False):
@@ -194,9 +215,9 @@ def fdecorr_nophasetrack(u=None,v=None,w=None,l=None,m=None,n=None,chan_width=No
 	at a given sky position l,m,n, for a given channel width and frequency
 	Assumes no phase tracking - add phasetrack=True to set w(n-1)'''
 	if phasetrack:
-		D_f = sinc((chan_width / freq) * (u*l + v*m + w*(n-1)))
+		D_f = do_sinc((chan_width / freq) * (u*l + v*m + w*(n-1)))
 	else:
-		D_f = sinc((chan_width / freq) * (u*l + v*m + w*n))
+		D_f = do_sinc((chan_width / freq) * (u*l + v*m + w*n))
 	return D_f
 
 def fdecorr(x_length=None,y_length=None,z_length=None,dec=None,ha=None,freq=None,chan_width=None):
@@ -414,9 +435,17 @@ def convert_image_lm2uv(image=None,l_reso=None):
 	
 	return uv_data_array,u_sim,v_sim,u_reso
 
+def my_loadtxt(image_loc):
+	'''For small arrays, loadtxt is slooooow so made my own'''
+	#my_im = loadtxt(image_loc)
+	lines = open(image_loc).read().split('\n')
+	my_im = array([map(float,line.split()) for line in lines if line != ''])
+	my_im.shape = (KERNEL_SIZE,KERNEL_SIZE)
+	
+	return my_im
 
-
-def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, weights=None, kernel='none',kernel_params=None, conjugate=False,central_lst=None,time_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_cent=None,beam_image=None,delay_str="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",u_sim=None,v_sim=None,image=None,u_reso=None,freq_decor=False,freq_int=None,fix_beam=False):
+#@profile
+def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, weights=None, kernel='none',kernel_params=None, conjugate=False,central_lst=None,time_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_cent=None,beam_image=None,delay_str="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",u_sim=None,v_sim=None,image=None,u_reso=None,freq_decor=False,freq_int=None,fix_beam=False,image_XX=False,image_YY=False):
 	'''A reverse gridded - takes a grid of uv data (must be square!!), and then samples the 
 	u,v data at the given u,v coords, using the desired kerrnel'''
 	
@@ -460,12 +489,14 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
 		beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,kernel)
 		
 		if fix_beam:
+			##We have already passed image_XX, image_YY as an argument if using fix_beam
+			pass
 			##If using CHIPS in fix beam mode, set to 186.235MHz (+0.02 for half channel width)
-			image_XX = loadtxt('%s/beam_%s_186255000.000_XX.txt' %(beam_loc,delay_str))
-			image_YY = loadtxt('%s/beam_%s_186255000.000_YY.txt' %(beam_loc,delay_str))
+			#image_XX = image_XX
+			#image_YY = my_loadtxt('%s/beam_%s_186255000.000_YY.txt' %(beam_loc,delay_str))
 		else:
-			image_XX = loadtxt('%s/beam_%s_%.3f_XX.txt' %(beam_loc,delay_str,freq_cent))
-			image_YY = loadtxt('%s/beam_%s_%.3f_YY.txt' %(beam_loc,delay_str,freq_cent))
+			image_XX = my_loadtxt('%s/beam_%s_%.3f_XX.txt' %(beam_loc,delay_str,freq_cent))
+			image_YY = my_loadtxt('%s/beam_%s_%.3f_YY.txt' %(beam_loc,delay_str,freq_cent))
 		
 	else:
 		print("You haven't entered a correct degridding kernel option")
