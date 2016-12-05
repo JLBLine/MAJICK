@@ -449,6 +449,6 @@ def this_main(antenna_table,base_data,base_uvfits,time,freq):
 	
 for time in time_range:
 	for freq in freq_range:
-		#p = Process(target=this_main, args=(antenna_table,base_data,base_uvfits,time,freq,))
-		#p.start()
-		this_main(antenna_table,base_data,base_uvfits,time,freq)
+		p = Process(target=this_main, args=(antenna_table,base_data,base_uvfits,time,freq,))
+		p.start()
+		#this_main(antenna_table,base_data,base_uvfits,time,freq)

@@ -3,12 +3,14 @@ from __future__ import print_function
 from __future__ import absolute_import
 from mwapy import ephem_utils
 from mwapy.pb import primary_beam
+from mwapy.pb import beam_full_EE
 #from mwapy.pb import mwa_tile
-from numpy import pi,cos,sin,array,repeat,reshape,sqrt,dot,ones,real,imag,arctan2,zeros,conjugate,linalg,transpose,matrix,identity,arccos,log,argmin
+from numpy import pi,cos,sin,array,repeat,reshape,sqrt,dot,ones,real,imag,arctan2,zeros,conjugate,linalg,transpose,matrix,identity,arccos,log,argmin,swapaxes
 from cmath import exp
 from uvdata_classes import *
 from gridding_functions import *
 from scipy import interpolate
+from os import environ
 try:
     from astropy.io import fits
 except ImportError:
@@ -20,6 +22,9 @@ VELC = 299792458.0
 MWA_LAT = -26.7033194444
 #MWA_LAT = -26.703319
 beam_freqs = arange(49920000,327680000+1.28e6,1.28e+6)
+
+MAJICK_DIR = environ['MAJICK_DIR']
+MWAPY_H5PATH = MAJICK_DIR + "/telescopes/MWA_phase1/mwa_full_embedded_element_pattern.h5" 
 
 ##Class to store calibrator source information with - set to lists
 ##to store component info in the same place
@@ -131,6 +136,38 @@ def create_calibrator(cali_info=None):
 			source.shapelet_coeffs.append(coeffs)
 	return source
 
+def local_beam(za, az, freq, delays=None, zenithnorm=True, power=True, jones=False, interp=True, pixels_per_deg=5):
+
+	tile=beam_full_EE.ApertureArray(MWAPY_H5PATH,freq)
+	mybeam=beam_full_EE.Beam(tile, delays)
+	if interp:
+		j=mybeam.get_interp_response(az, za, pixels_per_deg)
+	else:
+		j=mybeam.get_response(az, za)        
+	if zenithnorm==True:      
+		j=tile.apply_zenith_norm_Jones(j) #Normalise
+		
+	#TODO: do frequency interpolation here (with 2nd adjacent beam)
+
+	#Use swapaxis to place jones matrices in last 2 dimensions
+	#insead of first 2 dims.
+	if len(j.shape)==4:
+		j=swapaxes(swapaxes(j,0,2),1,3)
+	elif len(j.shape)==3: #1-D
+		j=swapaxes(swapaxes(j,1,2),0,1)
+	else: #single value
+		pass
+
+	if jones:        
+		return j
+		
+	#Use mwa_tile makeUnpolInstrumentalResponse because we have swapped axes
+	vis = mwa_tile.makeUnpolInstrumentalResponse(j,j)
+	if not power:
+		return (sqrt(vis[:,:,0,0].real),sqrt(vis[:,:,1,1].real))
+	else:
+		return (vis[:,:,0,0].real,vis[:,:,1,1].real)
+
 def weight_by_beam(source=None,freqcent=None,LST=None,delays=None,beam=False,fix_beam=False):
 	'''Takes a Cali_source() class and extrapolates to the given
 	frequency, then weights by the beam'''
@@ -183,7 +220,9 @@ def weight_by_beam(source=None,freqcent=None,LST=None,delays=None,beam=False,fix
 				
 				if fix_beam:
 					##If using CHIPS in fix_beam mode, force beam to 186.235MHz
-					XX,YY = primary_beam.MWA_Tile_full_EE([[za]], [[az]], freq=186.235e+6, delays=delays, zenithnorm=True, power=True, interp=False)
+					#XX,YY = primary_beam.MWA_Tile_full_EE([[za]], [[az]], freq=186.235e+6, delays=delays, zenithnorm=True, power=True, interp=False)
+					XX,YY = local_beam([[za]], [[az]], freq=186.235e+6, delays=delays, zenithnorm=True, power=True, interp=False)
+					
 					final_XX,final_YY = XX[0][0],YY[0][0]
 				else:
 					##The beam only has a spectral resolution of 1.28MHz. The known beam
@@ -202,7 +241,8 @@ def weight_by_beam(source=None,freqcent=None,LST=None,delays=None,beam=False,fix
 					this_YY = []
 					
 					for freq in freqs:
-						XX,YY = primary_beam.MWA_Tile_full_EE([[za]], [[az]], freq=freq, delays=delays, zenithnorm=True, power=True, interp=False)
+						#XX,YY = primary_beam.MWA_Tile_full_EE([[za]], [[az]], freq=freq, delays=delays, zenithnorm=True, power=True, interp=False)
+						XX,YY = local_beam([[za]], [[az]], freq=186.235e+6, delays=delays, zenithnorm=True, power=True, interp=False)
 						this_XX.append(XX[0][0])
 						this_YY.append(YY[0][0])
 					
@@ -243,8 +283,8 @@ def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,phase_dec=None,LST=
 		
 		##Add in decor if asked for
 		if time_decor:
-			l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
-			phase_ha = LST*D2R - phase_ra
+			#l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
+			#phase_ha = LST*D2R - phase_ra
 			##For MWA obs, need to input phase_ra,phase_dec as zenith
 			#print(time_decor)
 			#print(phase_dec,phase_ha)
@@ -258,8 +298,8 @@ def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,phase_dec=None,LST=
 			
 		##Add in decor if asked for
 		if freq_decor:
-			l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
-			phase_ha = LST*D2R - phase_ra
+			#l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
+			#phase_ha = LST*D2R - phase_ra
 			u,v,w = get_uvw(x_length,y_length,z_length,phase_dec,phase_ha)
 			fdecor = fdecorr_nophasetrack(u=u,v=v,w=w,l=l,m=m,n=n,chan_width=freq_decor,freq=freq,phasetrack=True)
 			this_vis *= fdecor

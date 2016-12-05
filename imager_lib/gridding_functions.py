@@ -475,10 +475,6 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
 		image_XX = image_gaussian(kernel_sig_x=sig_x,kernel_sig_y=sig_y,l_mesh=l_mesh,m_mesh=m_mesh,cell_reso=u_reso)
 		image_YY = image_XX
 		
-		###FT the image kernel to create the gridding kernel
-		#kernel_array_XX = image2kernel(image=image_kernel,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
-		#kernel_array_YY = kernel_array_XX
-		
 	elif kernel == 'MWA_phase1':
 		l_extent = 1.0 / u_reso
 		l_reso = l_extent / len(u_sim)
@@ -492,8 +488,6 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
 			##We have already passed image_XX, image_YY as an argument if using fix_beam
 			pass
 			##If using CHIPS in fix beam mode, set to 186.235MHz (+0.02 for half channel width)
-			#image_XX = image_XX
-			#image_YY = my_loadtxt('%s/beam_%s_186255000.000_YY.txt' %(beam_loc,delay_str))
 		else:
 			image_XX = my_loadtxt('%s/beam_%s_%.3f_XX.txt' %(beam_loc,delay_str,freq_cent))
 			image_YY = my_loadtxt('%s/beam_%s_%.3f_YY.txt' %(beam_loc,delay_str,freq_cent))
@@ -501,11 +495,6 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
 	else:
 		print("You haven't entered a correct degridding kernel option")
 		
-	#else:
-		#kernel_array_XX,kernel_array_YY = array([[complex(1,0)]]),array([[complex(1,0)]])
-		
-	##TODO - add in time decorrelation that would be introduced by correlator here
-	
 	if time_decor:
 		ra0,dec0 = phase_centre
 		h0 = central_lst - ra0
