@@ -110,7 +110,6 @@ for band_num in band_nums:
 	qsub_names.append(file_name)
 	out_file = open(file_name,'w+')
 	out_file.write('#!/bin/bash\n')
-	out_file.write('#PBS -l nodes=1\n')
 	
 	##Takes 30s with 100 source per freq / time
 	##For 32 freqs that means 64 mins per time step
@@ -121,7 +120,7 @@ for band_num in band_nums:
 	hours = ceil(hours)
 	
 	out_file.write('#PBS -l walltime=%02d:00:00\n' %int(hours) )
-	out_file.write('#PBS -l nodes=1:ppn=4\n')
+	out_file.write('#PBS -l nodes=1:ppn=8\n')
 	out_file.write('#PBS -m e\n')
 	out_file.write('#PBS -q sstar\n')
 	out_file.write('#PBS -A p048_astro\n')
