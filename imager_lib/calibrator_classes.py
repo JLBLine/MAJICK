@@ -322,7 +322,7 @@ def model_vis_phasetrack(u=None,v=None,w=None,source=None,phase_ra=None,
 	# V(u,v) = integral(I(l,m)*exp(i*2*pi*(ul+vm)) dl dm)
 	vis_XX = complex(0,0)
 	vis_YY = complex(0,0)
-	sign = +1
+	sign = -1
 	PhaseConst = 1j * 2 * pi * sign
 	
 	phase_ra *= D2R
