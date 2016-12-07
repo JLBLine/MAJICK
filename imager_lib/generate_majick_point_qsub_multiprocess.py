@@ -116,7 +116,7 @@ for band_num in band_nums:
 	##Round up to 70 for safety
 	
 	num_time_steps = len(tsteps)
-	hours = num_time_steps * (25.0 / 60.0)
+	hours = num_time_steps * (5.0 / 60.0)
 	hours = ceil(hours)
 	
 	out_file.write('#PBS -l walltime=%02d:00:00\n' %int(hours) )
