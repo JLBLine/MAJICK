@@ -121,6 +121,7 @@ for band_num in band_nums:
 	
 	out_file.write('#PBS -l walltime=%02d:00:00\n' %int(hours) )
 	out_file.write('#PBS -l nodes=1:ppn=8\n')
+	out_file.write('#PBS -l mem=50G\n')
 	out_file.write('#PBS -m e\n')
 	out_file.write('#PBS -q sstar\n')
 	out_file.write('#PBS -A p048_astro\n')
