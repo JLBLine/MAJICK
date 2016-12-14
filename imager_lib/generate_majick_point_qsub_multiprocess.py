@@ -83,7 +83,7 @@ for band_num in band_nums:
 	
 	base_freq = ((band_num - 1)*(b_width/24.0)) + low_freq
 
-	sim_command = "time python $MAJICK_DIR/simulate_uvfits_multiprocess.py"
+	sim_command = "time python $MAJICK_DIR/simulate_uvfits.py"
 	sim_command += " --freq_start=%.5f" %(base_freq / 1e+6)
 	sim_command += " --num_freqs=32"
 	sim_command += " --freq_res=%.5f" %(ch_width / 1e+6)
@@ -95,6 +95,7 @@ for band_num in band_nums:
 	sim_command += " --data_loc=%s" %options.data_loc
 	sim_command += " --telescope=%s" %options.telescope
 	sim_command += " --srclist=%s" %options.srclist
+	sim_command += " --multi_process=16"
 	if options.beam:
 		sim_command += " --beam"
 	if options.phase_centre:
@@ -116,11 +117,11 @@ for band_num in band_nums:
 	##Round up to 70 for safety
 	
 	num_time_steps = len(tsteps)
-	hours = num_time_steps * (5.0 / 60.0)
+	hours = num_time_steps * (4.0 / 60.0)
 	hours = ceil(hours)
 	
 	out_file.write('#PBS -l walltime=%02d:00:00\n' %int(hours) )
-	out_file.write('#PBS -l nodes=1:ppn=8\n')
+	out_file.write('#PBS -l nodes=1:ppn=16\n')
 	out_file.write('#PBS -l mem=50G\n')
 	out_file.write('#PBS -m e\n')
 	out_file.write('#PBS -q sstar\n')

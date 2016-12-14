@@ -7,14 +7,10 @@ from gridding_functions import *
 from uvdata_classes import *
 from time import time
 from generate_gsm_2016 import generate_gsm_2016
-try:
-	import pyfits as fits
-except ImportError:
-	from astropy.io import fits
+from astropy.io import fits
 from ephem import Observer,degrees
 from os import environ
 from numpy import floor
-from multiprocessing import Process
 
 MAJICK_DIR = environ['MAJICK_DIR']
 	
@@ -65,6 +61,9 @@ parser.add_option('-j', '--telescope', default='MWA_phase1',
 
 parser.add_option('-k', '--fix_beam', default=False, action='store_true',
 	help='Forces the MWA beam to be fixed to 186.235MHz, to be used in conjection with CHIPS_FIXBEAM')
+
+parser.add_option('-l', '--multi_process', default=False,
+	help='Switches on multiprocessing, using the number of processes given e.g. --multi_process=8')
 
 parser.add_option('-m', '--num_times', 
 	help='Enter number of times steps to simulate')
@@ -187,7 +186,11 @@ freq_range = freq_start + arange(num_freqs)*freq_res
 time_range = time_start + arange(num_times)*time_res
 
 #@profile
-def this_main(antenna_table,base_data,base_uvfits,time,freq):
+#def this_main(antenna_table,base_data,base_uvfits,time,freq):
+#def this_main(tf_tuple,antenna_table,base_data,base_uvfits):
+def this_main(antenna_table,base_data,base_uvfits,all_args):
+	time,freq = all_args
+	#time,freq = tf_tuple
 	print freq,time
 	freq_cent = ((freq + freq_res / 2.0)*1e+6)
 	
@@ -201,10 +204,16 @@ def this_main(antenna_table,base_data,base_uvfits,time,freq):
 		base_header = base_uvfits[0].header
 		antenna_table = base_uvfits[1].data
 		antenna_header = base_uvfits[1].header
-	
+		
+	#print antenna_table[0].shape
+	#print antenna_table[0][1]
 	##Go through the uvfits file and replace the current X,Y,Z locations
 	for i in xrange(len(X)):
+		#print 'here',i
+		#antenna_table[i][1] = [X[i],Y[i],Z[i]]
 		antenna_table['STABXYZ'][i] = [X[i],Y[i],Z[i]]
+		#print 'here2',i
+	
 
 	##Scale the X,Y,Z by the wavelength of channel centre
 	antennas = {}
@@ -301,7 +310,7 @@ def this_main(antenna_table,base_data,base_uvfits,time,freq):
 			ww[baseline] = w / freq_cent
 			#baselines_array[baseline] = base_data[baseline][3]
 			date_array[baseline] = float_jd
-			
+
 		baselines_array = array(base_data['BASELINE'])
 			
 		##UU, VV, WW don't actually get read in by RTS - might be an issue with
@@ -370,7 +379,7 @@ def this_main(antenna_table,base_data,base_uvfits,time,freq):
 		uvhdu.header['OBSDEC']  = dec_phase
 		
 		##ANTENNA TABLE MODS======================================================================
-
+		
 		base_uvfits[1].header['FREQ'] = freq_cent
 		
 		###MAJICK uses this date to set the LST
@@ -390,7 +399,15 @@ def this_main(antenna_table,base_data,base_uvfits,time,freq):
 		
 		##TODO - I think this may be half a time step off, need to give the central time
 		image, l_reso = generate_gsm_2016(freq=freq_cent,this_date=this_date,observer=MRO)
-		uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso)
+		#print('da shap',image.shape)
+
+		#image_size = 1900.0
+		#l_reso = 2.0 / (2*image_size)
+		
+		#image = ones((2*image_size+1,2*image_size+1))
+		#image[image_size,image_size] = 10.0
+		
+		#uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso)
 		
 		##For each baseline
 		skipped_gsm = 0
@@ -403,6 +420,10 @@ def this_main(antenna_table,base_data,base_uvfits,time,freq):
 			antenna_table = base_uvfits[1].data
 			antenna_header = base_uvfits[1].header
 			
+			
+		ra0,dec0 = ra_phase*D2R,dec_phase*D2R
+		phase_centre = [ra0,dec0]
+		
 		for baseline in xrange(len(base_data)):
 		#for baseline in range(len(base_data)-200,len(base_data)-199):
 			#print 'Adding GSM 2016'
@@ -419,18 +440,23 @@ def this_main(antenna_table,base_data,base_uvfits,time,freq):
 				#if u < u_sim.min() or u > u_sim.max(): outside = True
 				#if v < v_sim.min() or v > v_sim.max(): outside = True
 				
-				phase_centre = [ra_phase*D2R,dec_phase*D2R]
+				#uv_complex_XX,uv_complex_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
+					#kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline],
+					#phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
+					#freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=False)
+					
 				uv_complex_XX,uv_complex_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
 					kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline],
 					phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
-					freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY)
+					freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=True)
 				
-				PhaseConst = 1j * 2 * pi
-				##Insert a w-term as the FFT doesn't include them??
-				##Inserting the w for zenith pointing where n=1
-				##TODO - is this phase tracking case? Or add in an option for phase tracking??
-				n = 1
-				uv_complex_XX *= exp(PhaseConst * w*n)
+				#PhaseConst = 1j * 2 * pi
+				###Insert a w-term as the FFT doesn't include them??
+				###Inserting the w for zenith pointing where n=1
+				###TODO - is this phase tracking case? Or add in an option for phase tracking??
+				#n = 1
+				#uv_complex_XX *= exp(PhaseConst * w*n)
+				#uv_complex_YY *= exp(PhaseConst * w*n)
 				
 				write_data[baseline][5][0,0,0,0,0,:] += array([real(uv_complex_XX),imag(uv_complex_XX),0.0000])
 				write_data[baseline][5][0,0,0,0,1,:] += array([real(uv_complex_YY),imag(uv_complex_YY),0.0000])
@@ -438,17 +464,32 @@ def this_main(antenna_table,base_data,base_uvfits,time,freq):
 				skipped_gsm += 1
 			
 		print '%04d out of %04d baselines skipped in gsm, u,v point outside gsm uv data plane' %(skipped_gsm,len(base_data))
-			
+	
 	if time_res < 1:
 		uvfits_name = "%s_%.3f_%05.2f.uvfits" %(tag_name,freq,time)
 	else:
 		uvfits_name = "%s_%.3f_%02d.uvfits" %(tag_name,freq,int(time))
-		
+	
 	write_uvfits.writeto('%s/%s' %(data_loc,uvfits_name) ,clobber=True)
+	return
 	
+if options.multi_process:
+	from multiprocessing import Pool
+	from functools import partial
+		
+	iter_list = []
+	for time in time_range:
+		for freq in freq_range:
+			iter_list.append([time,freq])
+
+	pool = Pool(processes=int(options.multi_process))
+	func = partial(this_main, antenna_table, base_data, base_uvfits)
+	results = pool.map(func, iter_list)
+
+	pool.close()
+	pool.join()
 	
-for time in time_range:
-	for freq in freq_range:
-		#p = Process(target=this_main, args=(antenna_table,base_data,base_uvfits,time,freq,))
-		#p.start()
-		this_main(antenna_table,base_data,base_uvfits,time,freq)
+else:
+	for time in time_range:
+		for freq in freq_range:
+			this_main(antenna_table,base_data,base_uvfits,(time,freq))
