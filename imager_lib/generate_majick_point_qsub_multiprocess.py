@@ -25,6 +25,7 @@ parser.add_option('-b','--band_nums', help='Enter band numbers to simulate, sepa
 parser.add_option('-i', '--data_loc', default='./data',	help='Location to output the uvfits to OR location of uvfits if just adding diffuse model. Default = ./data')
 parser.add_option('-s','--srclist', help='Enter srclist to base sky model on')
 parser.add_option('-z','--fix_beam', default=False, action='store_true', help='Enable to switch on fixed beam observation')
+parser.add_option('-y','--num_cores', default=8, help='Enter number of cores per node to use, default is 8. Each core is assigned 3GB of RAM')
 
 options, args = parser.parse_args()
 debug = options.debug
@@ -95,7 +96,7 @@ for band_num in band_nums:
 	sim_command += " --data_loc=%s" %options.data_loc
 	sim_command += " --telescope=%s" %options.telescope
 	sim_command += " --srclist=%s" %options.srclist
-	sim_command += " --multi_process=16"
+	sim_command += " --multi_process=%d" %(int(options.num_cores))
 	if options.beam:
 		sim_command += " --beam"
 	if options.phase_centre:
@@ -116,13 +117,17 @@ for band_num in band_nums:
 	##For 32 freqs that means 64 mins per time step
 	##Round up to 70 for safety
 	
-	num_time_steps = len(tsteps)
-	hours = num_time_steps * (4.0 / 60.0)
+	##Takes about 1.2 minutes per simulation on gSTAR
+	##Total num of minutes is time steps times course channel of fine channels
+	num_mins = len(tsteps) * 32 * 1.2
+	##Speed up due to number of cores gives us number of hours. 
+	hours = num_mins / (int(options.num_cores) * 60.0)
+	##Round up for safety
 	hours = ceil(hours)
 	
 	out_file.write('#PBS -l walltime=%02d:00:00\n' %int(hours) )
-	out_file.write('#PBS -l nodes=1:ppn=16\n')
-	out_file.write('#PBS -l mem=50G\n')
+	out_file.write('#PBS -l nodes=1:ppn=%d\n' %int(options.num_cores))
+	out_file.write('#PBS -l mem=%dG\n' %(int(options.num_cores)*3))
 	out_file.write('#PBS -m e\n')
 	out_file.write('#PBS -q sstar\n')
 	out_file.write('#PBS -A p048_astro\n')
