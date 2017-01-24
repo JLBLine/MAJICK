@@ -7,7 +7,7 @@ from __future__ import absolute_import
 from uvdata_classes import *
 #from astropy.io import fits
 #from ephem import Observer,degrees
-from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,linspace,sinc,repeat,reshape,loadtxt,nan_to_num,ones
+from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,linspace,sinc,repeat,reshape,loadtxt,nan_to_num,ones,conjugate
 from numpy import abs as np_abs
 from numpy import exp as np_exp
 from cmath import phase,exp
@@ -27,6 +27,7 @@ D2R = pi/180.0
 R2D = 180.0/pi
 VELC = 299792458.0
 MWA_LAT = -26.7033194444
+#MWA_LAT = 0.0
 ##Always set the kernel size to an odd value
 ##Makes all ranges set to zero at central values
 KERNEL_SIZE = 31
@@ -104,14 +105,10 @@ def spheroidal_2D(size=KERNEL_SIZE):
 	'''Returns a 2D array of size x size using spheroidal_1D'''
 	##I think we always need an odd kernel size to get a 
 	##zero in this function
-	#import matplotlib.pyplot as plt
 	values = linspace(-1,1,size)
 	
 	x_spheroidal = spheroidal_1D(values)
 	y_spheroidal = spheroidal_1D(values)
-	
-	#plt.plot(values,x_spheroidal)
-	#plt.show()
 	
 	x_mesh, y_mesh = meshgrid(x_spheroidal,y_spheroidal)
 	
@@ -144,7 +141,7 @@ def image2kernel(image=None,cell_reso=None,u_off=0.0,v_off=0.0,l_mesh=None,m_mes
 	##may need to either take the complex conjugate, or flip the sign in
 	##the phase shift, or reverse the indicies in l_mesh, m_mesh. Or some
 	##combo of all!! J. Line 20-07-2016
-	phase_shift_image =  image * np_exp(+2j * pi*(u_off*cell_reso*l_mesh + v_off*cell_reso*m_mesh))
+	phase_shift_image =  image * np_exp(2j * pi*(u_off*cell_reso*l_mesh + v_off*cell_reso*m_mesh))
 	
 	##FFT shift the image ready for FFT
 	phase_shift_image = fft.ifftshift(phase_shift_image)
@@ -188,8 +185,6 @@ def do_sinc(x=None):
 		else:
 			sinc_x = sin(pi*x) / (pi*x)
 			
-	#sinc_x = sinc(x)
-			
 	return sinc_x
 
 def tdecorr_phasetrack(X=None,Y=None,Z=None,d0=None,h0=None,l=None,m=None,n=None,time_int=None):
@@ -210,7 +205,7 @@ def tdecorr_nophasetrack(u=None,d=None,H=None,t=None):
 	D_t=do_sinc(nu_fu*t)
 	return D_t
 
-def fdecorr_nophasetrack(u=None,v=None,w=None,l=None,m=None,n=None,chan_width=None,freq=None,phasetrack=False):
+def fdecorr(u=None,v=None,w=None,l=None,m=None,n=None,chan_width=None,freq=None,phasetrack=False):
 	'''Calculates the frequency decorrelation factor for a baseline u,v,w
 	at a given sky position l,m,n, for a given channel width and frequency
 	Assumes no phase tracking - add phasetrack=True to set w(n-1)'''
@@ -267,8 +262,8 @@ def find_closet_uv(u=None,v=None,u_range=None,v_range=None,resolution=None):
 	
 	return u_ind,v_ind,u_off,v_off
 
-def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None,complexes=None, weights=None,resolution=None, kernel=None, kernel_params=None, central_lst=None,time_decor=False,freq_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_int=None,central_frequency=None):
-	'''A simple(ish) gridder. '''
+def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None,complexes=None, weights=None,resolution=None, kernel='gaussian', kernel_params=None, central_lst=None,time_decor=False,freq_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_int=None,central_frequency=None):
+	'''A simple(ish) gridder - defaults to gridding with a gaussian '''
 	for i in xrange(len(u_coords)):
 		u,v,comp = u_coords[i],v_coords[i],complexes[i]
 		##Find the difference between the gridded u coords and the current u
@@ -277,7 +272,7 @@ def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None
 		
 		if kernel == 'gaussian':
 			sig_x,sig_y = kernel_params
-			kernel_array = gaussian(sig_x=sig_x,sig_y=sig_y,x_offset=u_off,y_offset=v_off)
+			#kernel_array = gaussian(sig_x=sig_x,sig_y=sig_y,x_offset=u_off,y_offset=v_off)
 			
 			##Calculate the extent of the pixels in l,m space
 			l_extent = 1.0 / resolution
@@ -288,8 +283,6 @@ def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None
 			l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
 			##Calculate the gaussian caused in image space due to desired params of gridding gaussian in u,v
 			image_kernel = image_gaussian(kernel_sig_x=sig_x,kernel_sig_y=sig_y,l_mesh=l_mesh,m_mesh=m_mesh,cell_reso=resolution)
-			
-			#image_kernel *= image_kernel > 1e-12
 			
 			##FT the image kernel to create the gridding kernel
 			
@@ -317,9 +310,7 @@ def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None
 				image_time = 1 / image_time
 				image_kernel *= image_time
 				
-			#kernel_array_before = image2kernel(image=image_kernel,cell_reso=resolution,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
 			if freq_decor:
-				#print('ooosh')
 				ra0,dec0 = phase_centre
 				h0 = central_lst - ra0
 				
@@ -328,14 +319,14 @@ def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None
 				
 				u,v,w = get_uvw(X,Y,Z,dec0*D2R,h0*D2R)
 				
-				image_freq = fdecorr_nophasetrack(u=u,v=v,w=w,l=l_mesh,m=m_mesh,n=n_mesh,chan_width=freq_int*1e6,freq=central_frequency,phasetrack=True)
+				image_freq = fdecorr(u=u,v=v,w=w,l=l_mesh,m=m_mesh,n=n_mesh,chan_width=freq_int*1e6,freq=central_frequency,phasetrack=True)
 				
 				###EXTENSION SECTION LEAVE COMMENTED-------------------------------------------
 				###If not phase tracking in the simulations, have to fiddle by the difference
 				#for freq_step in xrange(len(num_freq_step)):
 					#this_freq = intial_freq + freq_step*freq_reso
 					
-					#image_freq /= fdecorr_nophasetrack(u=u,v=v,w=w,l=l_mesh,m=m_mesh,n=n_mesh,chan_width=freq_int*1e6,freq=central_frequency,phasetrack=False)
+					#image_freq /= fdecorr(u=u,v=v,w=w,l=l_mesh,m=m_mesh,n=n_mesh,chan_width=freq_int*1e6,freq=central_frequency,phasetrack=False)
 					#u, v, w = get_uvw(X,Y,Z,dec0,this_ha0)
 					
 					###TODO - get nophasetrack defined in l,m,n
@@ -344,37 +335,18 @@ def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None
 				
 				image_freq = 1 / image_freq
 				image_kernel *= image_freq
-				
-			kernel_array = image2kernel(image=image_kernel,cell_reso=resolution,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
-			
-		elif kernel == 'inv_gaussian':
-			sig_x,sig_y = kernel_params
-			kernel_array = gaussian(sig_x=sig_x,sig_y=sig_y,x_offset=u_off,y_offset=v_off)
-			
-			##Calculate the extent of the pixels in l,m space
-			l_extent = 1.0 / resolution
-			l_reso = l_extent / len(u_range)
-			n2max = int((l_extent/2) / l_reso)
-			##Create a meshgrid to sample over whole l,m range with default 31 samples
-			
-			l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
-			##Calculate the gaussian caused in image space due to desired params of gridding gaussian in u,v
-			image_kernel = 1 / image_gaussian(kernel_sig_x=sig_x,kernel_sig_y=sig_y,l_mesh=l_mesh,m_mesh=m_mesh,cell_reso=resolution)
-			image_kernel = image_kernel < 1/1e-12
 			
 		else:
 			kernel_array = array([[complex(1,0)]])
+			
+		##Take the image space kernel and FT to get the gridding kernel
+		kernel_array = image2kernel(image=image_kernel,cell_reso=resolution,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
 		
 		##Multiply the kernal by the complex value
-		##Default kernel is a single point
 		data_kernel = kernel_array * comp
-		#print(comp,data_kernel)
 		
 		##Add the multiplied kernel-uvdata values to the grid
 		add_kernel(container,u_ind,v_ind,data_kernel)
-		###Just add the uvdata point alone
-		#container[v_ind,u_ind] += comp
-		#print(container[v_ind,u_ind])
 		
 	return container
 
@@ -382,56 +354,35 @@ def convert_image_lm2uv(image=None,l_reso=None):
 	'''Takes an l,m projected all sky and ffts to give a u,v plane from which
 	to (re)grid from'''
 	
-	im_width = image.shape[0]
-	##Need to make image odd to ensure we get all the correct u ranges??
+	num_pixel = image.shape[0]
 	
-	##Work out the u,v coords of the FT of the image - this is out uv grid
-	u_extent = 1.0 / l_reso
-	u_reso = u_extent / float(im_width)
-	
-	##These values can be used to set up a range of coords centred on zero;
-	##if we have an even sized image, we can use same method and just use up
-	##until one before the last in the range
-	n2max = int((u_extent/2) / u_reso)
-	
-	#if num_samples
-	#num_samples = image.shape[0]
-	##Set up the u and v coords
-	offset = n2max*l_reso / float(im_width)
-	
-	offset = 0
-	
-	if im_width % 2 == 0:
+	max_u = (0.5 / l_reso)
+	u_reso = (2*max_u) / float(num_pixel)
+	u_offset = -(u_reso / 2.0)
+
+	if num_pixel % 2 == 0:
+		u_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel) - u_reso/2.0
+		v_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel) - u_reso/2.0
+		
 		shift_image = fft.fftshift(image)
 		uv_data_array = fft.fft2(shift_image) #/ (image.shape[0] * image.shape[1])
 		uv_data_array = fft.ifftshift(uv_data_array)
 		
-		num_samples = im_width + 1
-		u_sim = linspace(-n2max*u_reso + offset, n2max*u_reso - offset, num_samples)
-		##TODO - why negative???
-		v_sim = -linspace(-n2max*u_reso + offset, n2max*u_reso - offset, num_samples)
+		u_mesh, v_mesh = meshgrid(u_sim,v_sim)
 		
-		##If even, need one less coords u_sim currently odd, with zero at centre
-		u_sim = u_sim[:-1]
-		v_sim = v_sim[:-1]
-		
-		#u_sim = u_sim[1:]
-		#v_sim = v_sim[1:]
-		
+		##As an even data array has l,m = 0,0 outside of a pixel, need to shift centre
+		##of the image to account for this. An offset in l,m space is a phase change in u,v
+		##space so apply a phase shift of half a pixel's worth to the uv_data array
+		uv_data_array *= np_exp(-2j*pi*(u_mesh*(l_reso/2.0) + v_mesh*(l_reso/2.0)))
+	
 	else:
+		u_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
+		v_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
+		
+
 		shift_image = fft.ifftshift(image)
 		uv_data_array = fft.fft2(shift_image) #/ (image.shape[0] * image.shape[1])
 		uv_data_array = fft.fftshift(uv_data_array)
-		
-		num_samples = im_width
-		u_sim = linspace(-n2max*u_reso + offset, n2max*u_reso - offset, num_samples)
-		##TODO - why negative???
-		v_sim = -linspace(-n2max*u_reso + offset, n2max*u_reso - offset, num_samples)
-	
-	
-	##Set the num_samples to be the number of pixels in image space
-	##GET convert_image_lm2uv to do this, so that we can have u,v data planes where
-	##len(u_sim) = odd
 	
 	return uv_data_array,u_sim,v_sim,u_reso
 
@@ -444,31 +395,50 @@ def my_loadtxt(image_loc):
 	
 	return my_im
 
+def wprojection(w=None,n=None):
+	'''When degridding from a plane of l,m data, you have no w term information in
+	the FFT. Add this is image space to do a quasi w-projection'''
+	
+	#print('w-term',np_exp(-2j*pi*(w*(n - 1))))
+	#return conjugate(np_exp(-2j*pi*(w*(n - 1)))) 
+	return np_exp(-2j*pi*(w*(n - 1)))
+
 #@profile
-def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, weights=None, kernel='none',kernel_params=None, conjugate=False,central_lst=None,time_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_cent=None,beam_image=None,delay_str="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",u_sim=None,v_sim=None,image=None,u_reso=None,freq_decor=False,freq_int=None,fix_beam=False,image_XX=False,image_YY=False):
+def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, weights=None, kernel='none',kernel_params=None, conjugate=False,central_lst=None,time_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_cent=None,beam_image=None,delay_str="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",u_sim=None,v_sim=None,image=None,u_reso=None,freq_decor=False,freq_int=None,fix_beam=False,image_XX=False,image_YY=False,wproj=True):
 	'''A reverse gridded - takes a grid of uv data (must be square!!), and then samples the 
 	u,v data at the given u,v coords, using the desired kerrnel'''
 	
 	sim_complexes = []
 	
-	u_ind,v_ind,u_off,v_off = find_closet_uv(u=u,v=v,u_range=u_sim,v_range=v_sim,resolution=u_reso)
-	##As v is going in opposite direction compared to when gridding (we have +ve to -ve)
-	##in v_sim, need to take the negative value of v_off
-	##TODO - why negative???
+	##TODO - get the ra of the source in there
+	#l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
 	
-	v_off = -v_off
+	u_ind,v_ind,u_off,v_off = find_closet_uv(u=u,v=v,u_range=u_sim,v_range=v_sim,resolution=u_reso)
+	l_extent = 0.5 / u_reso
+	#l_reso = l_extent / len(u_sim)
+	#n2max = int((l_extent/2) / l_reso)
+	###Create a meshgrid to sample over whole l,m range with default 31 samples
+	#l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
+	
+	l_range = linspace(-l_extent,l_extent,KERNEL_SIZE)
+	m_range = linspace(-l_extent,l_extent,KERNEL_SIZE)
+	l_mesh, m_mesh = meshgrid(l_range,m_range)
+	
+	##Outside l**2 + m**2 = 1 is unphysical, so we get nans
+	##Find a mask based on where the l,m coords are physical
+	n_mask = (l_mesh*l_mesh + m_mesh*m_mesh) <= 1
+	n_mesh = sqrt(1 - (l_mesh*l_mesh*n_mask + m_mesh*m_mesh*n_mask))
+	#n_mesh = nan_to_num(n_mesh)
+	
+	ra0,dec0 = phase_centre
+	h0 = central_lst - ra0
+	X,Y,Z = xyz_lengths
+	
+	u,v,w = get_uvw(X,Y,Z,dec0,h0)
 	
 	if kernel == 'gaussian':
-		kernel_params = [2.0,2.0]
+		kernel_params = [1.0,1.0]
 		sig_x,sig_y = kernel_params
-		
-		##To directly create guassian kernel in u,v space
-		#kernel_array = gaussian(sig_x=sig_x,sig_y=sig_y,x_offset=u_off,y_offset=v_off,gridsize=51)
-		
-		l_extent = 1.0 / u_reso
-		l_reso = l_extent / len(u_sim)
-		n2max = int((l_extent/2) / l_reso)
-		l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
 		
 		##Calculate the gaussian caused in image space due to desired params of gridding gaussian in u,v
 		#image_kernel = 
@@ -476,12 +446,6 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
 		image_YY = image_XX
 		
 	elif kernel == 'MWA_phase1':
-		l_extent = 1.0 / u_reso
-		l_reso = l_extent / len(u_sim)
-		n2max = int((l_extent/2) / l_reso)
-		##Create a meshgrid to sample over whole l,m range with default 31 samples
-		l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
-		
 		beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,kernel)
 		
 		if fix_beam:
@@ -496,50 +460,36 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
 		print("You haven't entered a correct degridding kernel option")
 		
 	if time_decor:
-		ra0,dec0 = phase_centre
-		h0 = central_lst - ra0
-		X,Y,Z = xyz_lengths
-		
-		n_mesh = sqrt(1 - (l_mesh*l_mesh + m_mesh*m_mesh))
-		
-		##Outside l**2 + m**2 = 1 is unphysical, so we get nans
-		##Turn nans into 0s here
-		n_mesh = nan_to_num(n_mesh)
-		
-		##Find a mask based on where the l,m coords are physical
-		n_mask = (l_mesh*l_mesh + m_mesh*m_mesh) <= 1
-		
-		image_time = (tdecorr_phasetrack(X=X,Y=Y,Z=Z,d0=dec0*D2R,h0=h0*D2R,l=l_mesh,m=m_mesh,n=n_mesh,time_int=time_int))
-		
+		#image_time = (tdecorr_phasetrack(X=X,Y=Y,Z=Z,d0=dec0,h0=h0,l=l_mesh,m=m_mesh,n=n_mesh,time_int=time_int))
+		image_time = (tdecorr_phasetrack(X=X,Y=Y,Z=Z,d0=dec0,h0=15.0*D2R,l=l_mesh,m=m_mesh,n=n_mesh,time_int=time_int))
 		##Apply mask to image_time
 		image_time *= n_mask
 		
 		image_XX *= image_time
 		image_YY *= image_time
-		
+
 	if freq_decor:
 		#print('ooosh')
-		ra0,dec0 = phase_centre
-		h0 = central_lst - ra0
-		X,Y,Z = xyz_lengths
-		
-		n_mesh = sqrt(1 - (l_mesh*l_mesh + m_mesh*m_mesh))
-		
-		##Outside l**2 + m**2 = 1 is unphysical, so we get nans
-		##Turn nans into 0s here
-		n_mesh = nan_to_num(n_mesh)
-		
-		##Find a mask based on where the l,m coords are physical
-		n_mask = (l_mesh*l_mesh + m_mesh*m_mesh) <= 1
-		
-		u,v,w = get_uvw(X,Y,Z,dec0*D2R,h0*D2R)
-		image_freq = fdecorr_nophasetrack(u=u,v=v,w=w,l=l_mesh,m=m_mesh,n=n_mesh,chan_width=freq_int*1e6,freq=freq_cent,phasetrack=True)
-		
+		image_freq = fdecorr(u=u,v=v,w=w,l=l_mesh,m=m_mesh,n=n_mesh,chan_width=freq_int*1e6,freq=freq_cent,phasetrack=True)
+		##Apply mask to image_freq
 		image_freq *= n_mask
 		
 		image_XX *= image_freq
 		image_YY *= image_freq
 		
+	#No matter what kernel used, l,m is a flat sky and so w terms are
+	#absent. Need to account for this, so generate the w-term effects
+	#image space and add to degridding kernel
+		
+	if wproj:
+		wproj_image = wprojection(w=w,n=n_mesh)
+		wproj_image *= n_mask
+		
+		image_XX = wproj_image * image_XX.astype(complex)
+		image_YY = wproj_image * image_YY.astype(complex)
+	else:
+		pass
+	
 	kernel_array_XX = image2kernel(image_XX,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
 	kernel_array_YY = image2kernel(image_YY,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
 	
@@ -547,4 +497,4 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
 	sim_complex_XX = apply_kernel(uv_data_array=uv_data_array,u_ind=u_ind,v_ind=v_ind,kernel=kernel_array_XX)
 	sim_complex_YY = apply_kernel(uv_data_array=uv_data_array,u_ind=u_ind,v_ind=v_ind,kernel=kernel_array_YY)
 		
-	return sim_complex_XX,sim_complex_YY
+	return sim_complex_XX,sim_complex_YY,image_XX,image_YY

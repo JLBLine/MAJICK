@@ -7,7 +7,7 @@ from uvdata_classes import *
 from gridding_functions import *
 from astropy.io import fits
 from ephem import Observer,degrees
-from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil
+from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,savetxt
 from numpy import abs as np_abs
 from numpy import exp as np_exp
 from cmath import phase,exp
@@ -24,6 +24,7 @@ D2R = pi/180.0
 R2D = 180.0/pi
 VELC = 299792458.0
 MWA_LAT = -26.7033194444
+#MWA_LAT = 0.0
 SOLAR2SIDEREAL = 1.00274
 
 class Sum_Pixel(object):
@@ -32,11 +33,13 @@ class Sum_Pixel(object):
 		self.freq_int = None
 		self.cal_names = []
 		self.ras = []
+		self.has = []
 		self.lsts = []
 		self.decs = []
 		self.sum_pixels = []
 		self.time_step = None
 		self.freq_step = None
+		self.predict_fluxes = []
 		self.tdecorr_factors = []
 		self.tdecorr_fluxes = []
 		#self.tdecorr_track = []
@@ -46,6 +49,8 @@ class Sum_Pixel(object):
 		#self.fdecorr_track = []
 		#self.fdecorr_notrack = []
 		self.decorr_overall = []
+		self.l_coords = []
+		self.m_coords = []
 
 class Imager(object):
 	def __init__(self, uv_container=None, over_sampling=1.0,freq_int=None,time_int=None,kernel=None,num_cals=None,xx_jones=None,srclist=None,metafits=None):
@@ -207,6 +212,12 @@ class Imager(object):
 						##Overall expected flux with all frequency and time decorrelation
 						sum_overall = 0
 						
+						##--------------------------------------------
+						l,m,n = get_lm(ra,ra0,dec,dec0)
+						sum_pixel.l_coords.append(l)
+						sum_pixel.m_coords.append(m)
+						
+						
 						##For each visibility
 						for visi_ind in xrange(len(avg_uu)):
 							x_length, y_length, z_length = x_lengths[visi_ind], y_lengths[visi_ind], z_lengths[visi_ind]
@@ -217,7 +228,7 @@ class Imager(object):
 							u_src, v_src, w_src = get_uvw_freq(x_length,y_length,z_length,dec,ha_source,freq=central_frequency)
 							##Undo phase tracking by muliplying by the inverse of the original phase track,
 							##then phase to src position by multiplying by phase of w_src
-							PhaseConst = -1j * 2 * pi
+							PhaseConst = 1j * 2 * pi
 							rotate_xx_complex = sum_xxpol_comps[visi_ind] * exp(PhaseConst*(w_src - avg_ww[visi_ind]))
 							
 							#out_uv.write('%.10f %.10f %.10f %.10f %.10f %.10f %.10f %.10f\n' %(u_phase,v_phase,w_phase,real(rotate_xx_complex),imag(rotate_xx_complex),x_length,y_length,z_length))
@@ -245,7 +256,7 @@ class Imager(object):
 								##Predict frequency decorrelation for full candence integration
 								##Centre prediction at the central frequency of the cadence integration
 								
-								fdecorr_factor = fdecorr_nophasetrack(u=avg_uu[visi_ind],v=avg_vv[visi_ind],w=avg_ww[visi_ind],
+								fdecorr_factor = fdecorr(u=avg_uu[visi_ind],v=avg_vv[visi_ind],w=avg_ww[visi_ind],
 									l=l,m=m,n=n,chan_width=self.uv_container.freq_res*1e6*num_freq_avg,freq=central_frequency,phasetrack=True)
 								
 								if beam:
@@ -262,49 +273,19 @@ class Imager(object):
 									overall_decor = cal_source.extrap_fluxs[pos_ind] * fdecorr_factor * tdecorr_factor
 								sum_overall += (2 * overall_decor)
 								
-								###=========================================================================
-								###Little section to adjust time decor for the missing decor in simulations
-								#time_decor_track = []
-								##time_decor_notrack = []
-								#freq_decor_track = []
-								##freq_decor_notrack = []
-								#for time_int in range(time_start,time_start+num_time_avg):
-									#for freq_int in range(freq_start,freq_start+num_freq_avg):
-										#adj_central_lst = intial_lst + (time_int * self.uv_container.time_res)
-										#h0_adj = adj_central_lst*D2R - ra0
-										#tdecorr_factor_track = tdecorr_phasetrack(X=x_length_scale,Y=y_length_scale,Z=z_length_scale,d0=dec0,h0=h0_adj,l=l,m=m,n=n,
-											#time_int=self.uv_container.time_res)
-										#time_decor_track.append(tdecorr_factor_track)
-										
-										#ha_source_this = adj_central_lst*D2R - ra
-										#u, v, w = get_uvw(x_length_scale,y_length_scale,z_length_scale,dec0,h0_adj)
-										#tdecorr_factor_notrack = tdecorr_nophasetrack(u=u,d=dec,H=ha_source_this,t=self.uv_container.time_res)
-										#time_decor_notrack.append(tdecorr_factor_notrack)
-										
-										#adj_freq_cent = (freq_cent + num_freq_avg * self.uv_container.freq_res) * 1e+6
-										
-										#l,m,n = get_lm(ra,ra0,dec,dec0)
-										#fdecorr_factor_track = fdecorr_nophasetrack(u=avg_uu[visi_ind],v=avg_vv[visi_ind],w=avg_ww[visi_ind],l=l,m=m,n=n,
-											#chan_width=self.uv_container.freq_res*1e+6,freq=adj_freq_cent,phasetrack=True)
-										#freq_decor_track.append(fdecorr_factor_track)
-										#l,m,n = get_lm(ra,adj_central_lst*D2R,dec,dec0)
-										#fdecorr_factor_notrack = fdecorr_nophasetrack(u=avg_uu[visi_ind],v=avg_vv[visi_ind],w=avg_ww[visi_ind],l=l,m=m,n=n,chan_width=self.uv_container.freq_res*1e+6,freq=adj_freq_cent,phasetrack=False)
-										#freq_decor_notrack.append(fdecorr_factor_notrack)
-										
-								#sum_tdecor_track += (2*array(time_decor_track).mean())
-								##sum_tdecor_notrack += (2*array(time_decor_notrack).mean())
 								
-								#sum_fdecor_track += (2*array(freq_decor_track).mean())
-								##sum_fdecor_notrack += (2*array(freq_decor_notrack).mean())
-								
-								###=========================================================================
-										
 						sum_uvw_cal /= sum_weights
 						sum_pixel.cal_names.append(cal_name)
 						sum_pixel.ras.append(ra)
+						sum_pixel.has.append(ha_source)
 						sum_pixel.decs.append(dec)
 						sum_pixel.sum_pixels.append(float(real(sum_uvw_cal)))
 						
+						if beam:
+							sum_pixel.predict_fluxes.append(cal_source.extrap_fluxs[pos_ind] * cal_source.XX_beam[pos_ind])
+						else:
+							sum_pixel.predict_fluxes.append(cal_source.extrap_fluxs[pos_ind])
+							
 						if predict_tdecor:
 							sum_tdecor /= sum_weights
 							sum_tdecor_factor /= sum_weights
@@ -494,13 +475,15 @@ class Imager(object):
 	
 	def image(self, plot_name=False, fits_name=False, double_kernel=False):
 		'''Images the gridded data - requires gridded_uv != None'''
-		##RA is backwards in images / fits files so invert u_axis
 		
 		print("Now FTing gridded data....")
 		
-		gridded_shift = fft.ifftshift(self.gridded_uv[::-1,:])
+		gridded_shift = fft.ifftshift(self.gridded_uv)
 		img_array = fft.ifft2(gridded_shift) * (self.naxis_u * self.naxis_v)
 		img_array_shift = fft.fftshift(img_array)
+		##RA is backwards in images / fits files so invert l_axis
+		img_array_shift = img_array_shift[:,::-1]
+		
 		
 		if self.kernel == 'gaussian' or self.kernel == 'time_decor' or self.kernel == 'time+freq_decor':
 			##Calcuate the l,m coords of the image array,
@@ -525,16 +508,9 @@ class Imager(object):
 			correct_image *= (correct_image < thresh)
 			img_array_shift *= correct_image
 			
-			if double_kernel: 
-				img_array_shift *= correct_image
-				img_array_shift = img_array_shift[::-1,:]
-		
 		if plot_name:
 			fig = plt.figure(figsize=(10,10))
-			#from mpl_toolkits.axes_grid1 import make_axes_locatable
-			#l_extent = sin(self.image_size*D2R)
 			l_extent = 1.0 / self.cell_reso
-			
 			
 			header = { 'NAXIS'  : 2,           			##Number of data axis
 			'CTYPE1' : 'RA---SIN',    					##Projection type of X axis
@@ -549,13 +525,13 @@ class Imager(object):
 			'CDELT2' : (l_extent / self.naxis_v)*R2D    ##Size of pixel in deg
 			} 
 			
-			print('Max abs, real, imag:',np_abs(img_array_shift).max(),real(img_array_shift).max(),imag(img_array_shift).max())
-			print('Min abs, real, imag:',np_abs(img_array_shift).min(),real(img_array_shift).min(),imag(img_array_shift).min())
+			#print('Max abs, real, imag:',np_abs(img_array_shift).max(),real(img_array_shift).max(),imag(img_array_shift).max())
+			#print('Min abs, real, imag:',np_abs(img_array_shift).min(),real(img_array_shift).min(),imag(img_array_shift).min())
 
 			wcs = WCS(header=header)
 			ax1 = fig.add_axes([0.1,0.1,0.8,0.8],projection=wcs)
 
-			im = ax1.imshow(real(img_array_shift),cmap='Blues',interpolation='none',origin='lower')#  real(img_arr).max()/2.0)#,vmin=-1,vmax=10)#,)
+			im = ax1.imshow(real(img_array_shift),cmap='Blues',interpolation='none',origin='lower',vmin=-0.1,vmax=0.3)#  real(img_arr).max()/2.0)#,vmin=-1,vmax=10)#,)
 
 			ax1.grid()
 			cax = fig.add_axes([0.92,0.1,0.05,0.8])
@@ -575,7 +551,6 @@ class Imager(object):
 			
 			header['CRPIX1']  = int(self.naxis_u / 2.0) + 1  ##+1 because fits files are 1 indexed
 			header['CRPIX2']  = int(self.naxis_v / 2.0) + 1
-			#header['CRVAL1']  = self.ra_point
 			header['CRVAL1']  = self.ra_phase
 			header['CRVAL2']  = self.dec_phase
 			header['CDELT1']  = -(l_extent / self.naxis_u)*R2D
@@ -588,38 +563,3 @@ class Imager(object):
 			hdu.writeto(fits_name,clobber=True)
 			
 		return img_array_shift
-	#def image_cal(self, plot_name=False, fits_name=False):
-		#'''Images the gridded data - requires gridded_uv != None'''
-		###RA is backwards in images / fits files so invert u_axis
-		#img_arr_cal = fft.ifft2(self.cal_gridded_uv[::-1,:])
-		#img_arr_cal = fft.fftshift(img_arr_cal)
-		
-		
-		#if plot_name:
-			#fig = plt.figure(figsize=(15,15))
-			#ax1 = fig.add_subplot(111)
-			#im_cal = ax1.imshow(np_abs(img_arr_cal),cmap='Blues',interpolation='none',origin='lower',vmax=np_abs(img_arr_cal).max()/4.0)
-			#plt.colorbar(im_cal)
-			#fig.savefig(plot_name,bbox_inches='tight')
-
-		#if fits_name:
-			#hdu = fits.PrimaryHDU(np_abs(img_arr_cal))
-			#hdulist = fits.HDUList([hdu])
-			#header = hdulist[0].header
-			
-			#print(arcsin(max_l)*R2D / self.naxis_v)
-			
-			#max_l = 1 / self.cell_reso
-			
-			#header['CRPIX1']  = int(self.naxis_u / 2.0)
-			#header['CRPIX2']  = int(self.naxis_v / 2.0)
-			#header['CRVAL1']  = self.ra
-			#header['CRVAL2']  = self.dec
-			#header['CDELT1']  = -arcsin(max_l)*R2D / self.naxis_u
-			#header['CDELT2']  = arcsin(max_l)*R2D / self.naxis_v
-			#header['CTYPE1']  = 'RA---SIN'
-			#header['CTYPE2']  = 'DEC--SIN'
-			#header['RADECSYS'] = 'FK5     '
-			#header['EQUINOX'] =  2000.
-			
-			#hdu.writeto(fits_name,clobber=True)

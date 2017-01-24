@@ -20,7 +20,7 @@ D2R = pi/180.0
 R2D = 180.0/pi
 VELC = 299792458.0
 MWA_LAT = -26.7033194444
-#MWA_LAT = -26.703319
+#MWA_LAT = 0
 beam_freqs = arange(49920000,327680000+1.28e6,1.28e+6)
 
 MAJICK_DIR = environ['MAJICK_DIR']
@@ -137,7 +137,7 @@ def create_calibrator(cali_info=None):
 	return source
 
 def local_beam(za, az, freq, delays=None, zenithnorm=True, power=True, jones=False, interp=True, pixels_per_deg=5):
-
+	'''Code pulled my mwapy that generates the MWA beam response - removes unecessary extra code from mwapy/pb'''
 	tile=beam_full_EE.ApertureArray(MWAPY_H5PATH,freq)
 	mybeam=beam_full_EE.Beam(tile, delays)
 	if interp:
@@ -147,8 +147,6 @@ def local_beam(za, az, freq, delays=None, zenithnorm=True, power=True, jones=Fal
 	if zenithnorm==True:      
 		j=tile.apply_zenith_norm_Jones(j) #Normalise
 		
-	#TODO: do frequency interpolation here (with 2nd adjacent beam)
-
 	#Use swapaxis to place jones matrices in last 2 dimensions
 	#insead of first 2 dims.
 	if len(j.shape)==4:
@@ -301,7 +299,7 @@ def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,phase_dec=None,LST=
 			#l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
 			#phase_ha = LST*D2R - phase_ra
 			u,v,w = get_uvw(x_length,y_length,z_length,phase_dec,phase_ha)
-			fdecor = fdecorr_nophasetrack(u=u,v=v,w=w,l=l,m=m,n=n,chan_width=freq_decor,freq=freq,phasetrack=True)
+			fdecor = fdecorr(u=u,v=v,w=w,l=l,m=m,n=n,chan_width=freq_decor,freq=freq,phasetrack=True)
 			this_vis *= fdecor
 	
 		if beam:
@@ -313,12 +311,11 @@ def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,phase_dec=None,LST=
 			
 	return vis_XX,vis_YY
 
-
-
 def model_vis_phasetrack(u=None,v=None,w=None,source=None,phase_ra=None,
 		phase_dec=None,LST=None,x_length=None,y_length=None,z_length=None,
 		time_decor=False,freq_decor=False,beam=False,freq=None,time_int=None,
 		chan_width=None,fix_beam=False):   ##,sources=None
+	'''Generates model visibilities for a phase tracking correlator'''
 	# V(u,v) = integral(I(l,m)*exp(i*2*pi*(ul+vm)) dl dm)
 	vis_XX = complex(0,0)
 	vis_YY = complex(0,0)
@@ -331,14 +328,13 @@ def model_vis_phasetrack(u=None,v=None,w=None,source=None,phase_ra=None,
 	for i in xrange(len(source.ras)):
 		
 		ra,dec,flux = source.ras[i],source.decs[i],source.extrap_fluxs[i]
-		
 		phase_ha = LST*D2R - phase_ra
 		ha = (LST - ra)*D2R
 		
 		##TODO - l,m,n should be constant if phasetracking - pull out of loop somehow?
 		l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
 		this_vis = (flux * exp(PhaseConst*(u*l + v*m + w*(n-1))))
-
+		
 		##Add in decor if asked for
 		if time_decor:
 			tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=phase_dec,h0=phase_ha,l=l,m=m,n=n,time_int=time_int)
@@ -346,7 +342,7 @@ def model_vis_phasetrack(u=None,v=None,w=None,source=None,phase_ra=None,
 			
 		##Add in decor if asked for
 		if freq_decor:
-			fdecor = fdecorr_nophasetrack(u=u,v=v,w=w,l=l,m=m,n=n,chan_width=chan_width,freq=freq,phasetrack=True)
+			fdecor = fdecorr(u=u,v=v,w=w,l=l,m=m,n=n,chan_width=chan_width,freq=freq,phasetrack=True)
 			this_vis *= fdecor
 	
 		if beam:

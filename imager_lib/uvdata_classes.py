@@ -24,6 +24,7 @@ D2R = pi/180.0
 R2D = 180.0/pi
 VELC = 299792458.0
 MWA_LAT = -26.7033194444
+#MWA_LAT = 0.0
 SOLAR2SIDEREAL = 1.00274
 
 ##ephem Observer class, use this to compute LST from the date of the obs 
@@ -135,8 +136,6 @@ class UVData(object):
 		self.dec_point = HDU[0].header['CRVAL7']
 		self.freq = HDU[0].header['CRVAL4']
 		
-		##TODO is this half a time cadence wrong???
-		##TODO or do we just make sure to always add a half time step??
 		##Reformat date from header into something
 		##readble by Observer to calcualte LST
 		date,time = HDU[1].header['RDATE'].split('T')
@@ -146,8 +145,6 @@ class UVData(object):
 		##add on half a time resolution to find the LST
 		##at the centre of this
 		self.central_LST = float(MRO.sidereal_time())*R2D + ((time_res/2.0)*(15.0/3600.0)*SOLAR2SIDEREAL)
-		#print(self.central_LST)
-		
 		#print(self.ra_point,self.dec_point,HDU[1].header['RDATE'],self.LST)
 
 		##Requires u,v,w in units of wavelength, stored in seconds
@@ -172,8 +169,6 @@ class UVData(object):
 		self.uvw_calc = []
 		self.uvw_zenith = []
 		
-		#test_xyz = open("test_xyz.txt",'w+')
-		
 		for baseline in baselines:
 			ant2 = mod(baseline, 256)
 			ant1 = (baseline - ant2)/256
@@ -182,10 +177,8 @@ class UVData(object):
 			x_length,y_length,z_length = self.antennas['ANT%03d' %ant1]*(HDU[0].header['CRVAL4'] / VELC) - self.antennas['ANT%03d' %ant2]*(HDU[0].header['CRVAL4'] / VELC)
 			self.xyz_lengths.append([x_length,y_length,z_length])
 			
-			#test_xyz.write('%.3f %.3f %.3f\n' %(x_length,y_length,z_length))
-			#self.uvw_calc.append(get_uvw(x_length,y_length,z_length,self.dec_point*D2R,self.LST*D2R - self.ra_point*D2R))
-			#self.uvw_zenith.append(get_uvw(x_length,y_length,z_length,MWA_LAT*D2R,0.0))
-		#test_xyz.close()
+			self.uvw_calc.append(get_uvw(x_length,y_length,z_length,self.dec_point*D2R,self.LST*D2R - self.ra_point*D2R))
+			self.uvw_zenith.append(get_uvw(x_length,y_length,z_length,MWA_LAT*D2R,0.0))
 			
 		##TODO read in 'CRVAL3' to determine data shape
 		##and set num_polar
@@ -286,7 +279,7 @@ class UVContainer(object):
 						##of your phase centre (the old w[n-1])
 						xx_complex = complex(uvdata.data[k][0,0],uvdata.data[k][0,1])
 						yy_complex = complex(uvdata.data[k][1,0],uvdata.data[k][1,1])
-						PhaseConst = - 1j * 2 * pi
+						PhaseConst = -1j * 2 * pi
 						rotate_xx_complex = xx_complex * exp(PhaseConst * w_phase)
 						rotate_yy_complex = yy_complex * exp(PhaseConst * w_phase)
 						

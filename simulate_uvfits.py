@@ -10,7 +10,8 @@ from generate_gsm_2016 import generate_gsm_2016
 from astropy.io import fits
 from ephem import Observer,degrees
 from os import environ
-from numpy import floor
+from numpy import floor,random
+KERNELSIZE = 31
 
 MAJICK_DIR = environ['MAJICK_DIR']
 	
@@ -18,6 +19,7 @@ D2R = pi/180.0
 R2D = 180.0/pi
 VELC = 299792458.0
 MWA_LAT = -26.7033194444
+#MWA_LAT = 0.0
 
 def enh2xyz(east,north,height,latitiude):
 	sl = sin(latitiude)
@@ -71,8 +73,17 @@ parser.add_option('-m', '--num_times',
 parser.add_option('-n', '--num_freqs',
 	help='Enter number of frequency channels to simulate')
 
+parser.add_option('-o', '--wproj',default=False,action='store_true',
+	help='Add to enable w-projection')
+
 parser.add_option('-p', '--phase_centre', default=False,
 	help='Phase centre of the observation in degrees as RA,DEC - as a default tracks the intial zenith point')
+
+parser.add_option('-q', '--l_value',
+	help='l offset value for testing')
+
+parser.add_option('-r', '--new_uvfits', default=False, action='store_true',
+	help='Add to create a fully new uvfits file for the diffuse simulation')
 
 parser.add_option('-s', '--srclist', default=False,
 	help='Enter name of srclist from which to add point sources')
@@ -120,16 +131,14 @@ MRO.lat, MRO.long, MRO.elevation = '-26:42:11.95', '116:40:14.93', 0
 date,time = intial_date.split('T')
 MRO.date = '/'.join(date.split('-'))+' '+time
 intial_lst = float(MRO.sidereal_time())*R2D
-#intial_ra_point = 356.303842095
 intial_ra_point = float(MRO.sidereal_time())*R2D
-#print intial_ra_point
 dec_point = MWA_LAT
 
 if options.phase_centre:
 	ra_phase, dec_phase = map(float,options.phase_centre.split(','))
 else:
 	ra_phase, dec_phase = intial_ra_point, dec_point
-
+	
 ##Get the local topocentric X,Y,Z values for the MWA using the local topocentric e,n,h
 ##values from the antenna locs in MWA_Tools
 
@@ -186,11 +195,8 @@ freq_range = freq_start + arange(num_freqs)*freq_res
 time_range = time_start + arange(num_times)*time_res
 
 #@profile
-#def this_main(antenna_table,base_data,base_uvfits,time,freq):
-#def this_main(tf_tuple,antenna_table,base_data,base_uvfits):
 def this_main(antenna_table,base_data,base_uvfits,all_args):
 	time,freq = all_args
-	#time,freq = tf_tuple
 	print freq,time
 	freq_cent = ((freq + freq_res / 2.0)*1e+6)
 	
@@ -205,15 +211,9 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 		antenna_table = base_uvfits[1].data
 		antenna_header = base_uvfits[1].header
 		
-	#print antenna_table[0].shape
-	#print antenna_table[0][1]
 	##Go through the uvfits file and replace the current X,Y,Z locations
 	for i in xrange(len(X)):
-		#print 'here',i
-		#antenna_table[i][1] = [X[i],Y[i],Z[i]]
 		antenna_table['STABXYZ'][i] = [X[i],Y[i],Z[i]]
-		#print 'here2',i
-	
 
 	##Scale the X,Y,Z by the wavelength of channel centre
 	antennas = {}
@@ -236,7 +236,7 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 	##Convert the time offset into a sky offset in degrees
 	##Add in half a time resolution step to give the central LST
 	sky_offset = (((time + (time_res / 2.0))*SOLAR2SIDEREAL)*(15.0/3600.0))
-
+	
 	##Currently always point to zenith
 	ra_point = intial_ra_point + sky_offset
 	if ra_point >=360.0: ra_point -= 360.0
@@ -291,7 +291,7 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 					model_xxpol,model_yypol = model_vis_phasetrack(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
 						x_length=x_length,y_length=y_length,z_length=z_length,freq_decor=freq_decor,freq=freq_cent,time_decor=time_decor,
 						time_int=time_res,chan_width=freq_res*1e+6,beam=options.beam)
-						
+					
 					uv_data_XX += array([real(model_xxpol),imag(model_xxpol),0.0000])
 					uv_data_YY += array([real(model_yypol),imag(model_yypol),0.0000])
 			
@@ -300,7 +300,12 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 			##uv_data_YY[2] = 1.0
 			
 			##Enter the XX and YY info. Leave XY, YX as zero for now
-			uvdata = [list(uv_data_XX),list(uv_data_YY), [0.0,0.0,0.0],[0.0,0.0,0.0]]
+			if options.new_uvfits:
+				##If creating a new uvfits file to a diffuse simulation, enter blank data
+				uvdata = [[0.0,0.0,1.0],[0.0,0.0,1.0],[0.0,0.0,1.0],[0.0,0.0,1.0]]
+			else:
+				uvdata = [list(uv_data_XX),list(uv_data_YY), [0.0,0.0,1.0],[0.0,0.0,1.0]]
+			
 			uvdata = array(uvdata)
 			uvdata.shape = (4,3)
 			
@@ -308,7 +313,6 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 			uu[baseline] = u / freq_cent
 			vv[baseline] = v / freq_cent
 			ww[baseline] = w / freq_cent
-			#baselines_array[baseline] = base_data[baseline][3]
 			date_array[baseline] = float_jd
 
 		baselines_array = array(base_data['BASELINE'])
@@ -360,7 +364,6 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 		uvhdu.header['CDELT7'] = base_uvfits[0].header['CDELT7']
 
 		## Write the parameters scaling explictly because they are omitted if default 1/0
-
 		uvhdu.header['PSCAL1'] = 1.0
 		uvhdu.header['PZERO1'] = 0.0
 		uvhdu.header['PSCAL2'] = 1.0
@@ -372,8 +375,6 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 		uvhdu.header['PSCAL5'] = 1.0
 
 		uvhdu.header['PZERO5'] = float(int_jd)
-		#uvhdu.header['PZERO5'] = 0.0
-
 		uvhdu.header['OBJECT']  = 'Undefined'                                                           
 		uvhdu.header['OBSRA']   = ra_phase                                          
 		uvhdu.header['OBSDEC']  = dec_phase
@@ -387,27 +388,58 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 
 		## Create hdulist and write out file
 		write_uvfits = fits.HDUList(hdus=[uvhdu,base_uvfits[1]])
-		#hdulist.writeto(output_uvfits_name,clobber=True)
-		#base_uvfits.close()
-		#hdulist.close()
 		write_data = write_uvfits[0].data
 		write_header = write_uvfits[0].header
 		antenna_table = write_uvfits[1].data
 		antenna_header = write_uvfits[1].header
 		
 	if options.diffuse:
-		
 		##TODO - I think this may be half a time step off, need to give the central time
 		image, l_reso = generate_gsm_2016(freq=freq_cent,this_date=this_date,observer=MRO)
-		#print('da shap',image.shape)
 
-		#image_size = 1900.0
-		#l_reso = 2.0 / (2*image_size)
+		##----TESTCODE-------------------------------------------------------------
+		##-------------------------------------------------------------------------
+		#half_width = 4.0
+		#image_size = 1000
+		#l_range = linspace(-half_width,half_width,2.0*image_size + 1)
+		#m_range = linspace(-half_width,half_width,2.0*image_size + 1)
+		#l_reso = (2.0*half_width) / (2.0*image_size + 1)
 		
-		#image = ones((2*image_size+1,2*image_size+1))
-		#image[image_size,image_size] = 10.0
+		#l_off = int(options.l_value)
+		#m_off = 0
 		
-		#uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso)
+		#image = zeros((2.0*image_size+1,2.0*image_size+1))
+		##image = zeros((2.0*image_size,2.0*image_size))
+		
+		#test_srclist = open('srclist_%03d.txt' %l_off,'w+')
+		#test_srclist_diff = open('srclist_diff_%03d.txt' %l_off,'w+')
+		
+		#l = l_range[image_size+l_off]
+		#m = m_range[image_size+m_off]
+		#image[image_size+m_off,image_size+l_off] = 1.0
+		#ra_source = lst + arcsin(l)*R2D - ((time_res / 2.0)*SOLAR2SIDEREAL*(15.0/3600.0))
+		#dec_source = MWA_LAT + arcsin(m)*R2D
+		
+		#if ra_source > 360.0: ra_source -= 360.0
+		
+		#test_srclist.write('SOURCE bleh%d%d %.5f %.5f\n' %(l_off,m_off,ra_source/15.0,dec_source))
+		#test_srclist.write('FREQ 160e+6 1.0 0 0 0\n')
+		#test_srclist.write('FREQ 180e+6 1.0 0 0 0\n')
+		#test_srclist.write('ENDSOURCE\n')
+		
+		#test_srclist_diff.write('SOURCE bleh%d%d %.5f %.5f\n' %(l_off,m_off,(ra_source/15.0)+arcsin(l_reso),dec_source))
+		#test_srclist_diff.write('FREQ 160e+6 1.0 0 0 0\n')
+		#test_srclist_diff.write('FREQ 180e+6 1.0 0 0 0\n')
+		#test_srclist_diff.write('ENDSOURCE\n')
+		
+		#test_srclist.close()
+		#test_srclist_diff.close()
+			#print('ra_source,dec_source',ra_source,dec_source)
+			
+		##-------------------------------------------------------------------------
+		##----END TESTCODE---------------------------------------------------------
+		
+		uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso)
 		
 		##For each baseline
 		skipped_gsm = 0
@@ -420,48 +452,41 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 			antenna_table = base_uvfits[1].data
 			antenna_header = base_uvfits[1].header
 			
-			
 		ra0,dec0 = ra_phase*D2R,dec_phase*D2R
 		phase_centre = [ra0,dec0]
 		
 		for baseline in xrange(len(base_data)):
-		#for baseline in range(len(base_data)-200,len(base_data)-199):
-			#print 'Adding GSM 2016'
 			##Due to the resolution of the GSM not all baselines will fall on the u,v
 			##plane (u_extent = 1 / l_reso), so skip those that fail
-			try:
-				###u,v,w, stored in seconds in the uvfits
-				##make sure we use the same u,v,w aleady stored in the uvfits
-				u = write_data[baseline][0] * freq_cent
-				v = write_data[baseline][1] * freq_cent
-				w = write_data[baseline][2] * freq_cent
-				
-				#outside = False
-				#if u < u_sim.min() or u > u_sim.max(): outside = True
-				#if v < v_sim.min() or v > v_sim.max(): outside = True
-				
-				#uv_complex_XX,uv_complex_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
-					#kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline],
-					#phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
-					#freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=False)
-					
-				uv_complex_XX,uv_complex_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
-					kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline],
-					phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
-					freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=True)
-				
-				#PhaseConst = 1j * 2 * pi
-				###Insert a w-term as the FFT doesn't include them??
-				###Inserting the w for zenith pointing where n=1
-				###TODO - is this phase tracking case? Or add in an option for phase tracking??
-				#n = 1
-				#uv_complex_XX *= exp(PhaseConst * w*n)
-				#uv_complex_YY *= exp(PhaseConst * w*n)
+			#try:
+			###u,v,w, stored in seconds in the uvfits
+			##make sure we use the same u,v,w aleady stored in the uvfits
+			u = write_data[baseline][0] * freq_cent
+			v = write_data[baseline][1] * freq_cent
+			w = write_data[baseline][2] * freq_cent
+			
+			outside = False
+			half_grid_width = floor(KERNELSIZE / 2.0) * u_reso
+			
+			if u < (u_sim.min() + half_grid_width) or u > (u_sim.max() - half_grid_width): outside = True
+			if v < (v_sim.min() + half_grid_width) or v > (v_sim.max() - half_grid_width): outside = True
+			
+			if outside:
+				skipped_gsm += 1
+			else:
+				if options.beam:
+					uv_complex_XX,uv_complex_YY,this_image_XX,this_image_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
+						kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline],
+						phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
+						freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=options.wproj)
+				else:
+					uv_complex_XX,uv_complex_YY,this_image_XX,this_image_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
+						kernel='gaussian',freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline],
+						phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
+						freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=options.wproj)
 				
 				write_data[baseline][5][0,0,0,0,0,:] += array([real(uv_complex_XX),imag(uv_complex_XX),0.0000])
 				write_data[baseline][5][0,0,0,0,1,:] += array([real(uv_complex_YY),imag(uv_complex_YY),0.0000])
-			except:
-				skipped_gsm += 1
 			
 		print '%04d out of %04d baselines skipped in gsm, u,v point outside gsm uv data plane' %(skipped_gsm,len(base_data))
 	
