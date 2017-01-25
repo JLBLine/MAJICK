@@ -215,17 +215,17 @@ def fdecorr(u=None,v=None,w=None,l=None,m=None,n=None,chan_width=None,freq=None,
 		D_f = do_sinc((chan_width / freq) * (u*l + v*m + w*n))
 	return D_f
 
-def fdecorr(x_length=None,y_length=None,z_length=None,dec=None,ha=None,freq=None,chan_width=None):
-	'''Take the X,Y,Z_lambda coords of a baseline, and calculates the 
-	frequency decorrelation in the direction of a source at location ha,dec'''
-	##Eq 2-12 in TCP
+#def fdecorr(x_length=None,y_length=None,z_length=None,dec=None,ha=None,freq=None,chan_width=None):
+	#'''Take the X,Y,Z_lambda coords of a baseline, and calculates the 
+	#frequency decorrelation in the direction of a source at location ha,dec'''
+	###Eq 2-12 in TCP
 	
-	w = cos(dec)*cos(ha)*x_length - cos(dec)*sin(ha)*y_length + sin(dec)*z_length
+	#w = cos(dec)*cos(ha)*x_length - cos(dec)*sin(ha)*y_length + sin(dec)*z_length
 	
-	##Geometric time delay across baseline
-	t_g = w/freq
+	###Geometric time delay across baseline
+	#t_g = w/freq
 	
-	return sinc(chan_width*t_g)
+	#return sinc(chan_width*t_g)
 
 def find_closet_uv(u=None,v=None,u_range=None,v_range=None,resolution=None):
 	##Find the difference between the gridded u coords and the desired u
