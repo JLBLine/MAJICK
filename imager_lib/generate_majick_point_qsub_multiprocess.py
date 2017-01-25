@@ -113,13 +113,11 @@ for band_num in band_nums:
 	out_file = open(file_name,'w+')
 	out_file.write('#!/bin/bash\n')
 	
-	##Takes 30s with 100 source per freq / time
-	##For 32 freqs that means 64 mins per time step
-	##Round up to 70 for safety
-	
+
+
 	##Takes about 1.2 minutes per simulation on gSTAR
 	##Total num of minutes is time steps times course channel of fine channels
-	num_mins = len(tsteps) * 32 * 1.2
+	num_mins = len(tsteps) * 32 * 3.5
 	##Speed up due to number of cores gives us number of hours. 
 	hours = num_mins / (int(options.num_cores) * 60.0)
 	##Round up for safety
