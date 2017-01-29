@@ -120,7 +120,7 @@ for band_num in band_nums:
 
 	##Takes about 1.2 minutes per simulation on gSTAR
 	##Total num of minutes is time steps times course channel of fine channels
-	num_mins = len(tsteps) * 32 * 3.5
+	num_mins = len(tsteps) * int(1.28e+6 / ch_width) * 3.5
 	##Speed up due to number of cores gives us number of hours. 
 	hours = num_mins / (int(options.num_cores) * 60.0)
 	##Round up for safety
