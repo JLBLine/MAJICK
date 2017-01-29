@@ -130,7 +130,7 @@ for band_num in band_nums:
 	out_file.write('#PBS -l nodes=1:ppn=%d\n' %int(options.num_cores))
 	out_file.write('#PBS -l mem=%dG\n' %(int(options.num_cores)*3))
 	out_file.write('#PBS -m e\n')
-	out_file.write('#PBS -q sstar\n')
+	out_file.write('#PBS -q gstar\n')
 	out_file.write('#PBS -A p048_astro\n')
 
 	out_file.write('source /home/jline/.bash_profile\n')
