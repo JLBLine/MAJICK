@@ -66,7 +66,7 @@ if options.freq_res: ch_width = float(options.freq_res)*1e+6
 
 freqcent = float(f[0].header['FREQCENT'])*1e+6
 b_width = float(f[0].header['BANDWDTH'])*1e+6
-low_freq = freqcent - (b_width/2) - (ch_width/2)
+low_freq = freqcent - (b_width/2) - ((float(f[0].header['FINECHAN'])*1e+3)/2)
 
 band_nums = map(int,options.band_nums.split(','))
 start_tstep,end_tstep = map(float,options.time.split(','))
