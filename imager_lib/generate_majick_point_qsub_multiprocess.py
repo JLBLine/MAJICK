@@ -89,7 +89,7 @@ for band_num in band_nums:
 
 	sim_command = "time python $MAJICK_DIR/simulate_uvfits.py"
 	sim_command += " --freq_start=%.5f" %(base_freq / 1e+6)
-	sim_command += " --num_freqs=%d" %int(1.28 / ch_width)
+	sim_command += " --num_freqs=%d" %int(1.28e+6 / ch_width)
 	sim_command += " --freq_res=%.5f" %(ch_width / 1e+6)
 	sim_command += " --time_start=%.5f " %start_tstep
 	sim_command += " --num_times=%d" %len(tsteps)
