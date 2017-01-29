@@ -62,7 +62,7 @@ dump_time = float(f[0].header['INTTIME'])
 if options.twosec: dump_time = float(options.twosec)
 
 ch_width = float(f[0].header['FINECHAN'])*1e+3
-if options.freq_res: ch_width = float(ch_width)*1e+6
+if options.freq_res: ch_width = float(options.freq_res)*1e+6
 
 freqcent = float(f[0].header['FREQCENT'])*1e+6
 b_width = float(f[0].header['BANDWDTH'])*1e+6
