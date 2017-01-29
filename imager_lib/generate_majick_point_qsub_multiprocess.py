@@ -16,6 +16,7 @@ parser.add_option('-d','--debug',default=False,action='store_true', help='Enable
 parser.add_option('-m','--metafits', help='Enter name of metafits file to base obs on')
 parser.add_option('-t','--time', help='Enter start,end of sim in seconds from the beginning of the observation (as set by metafits)')
 parser.add_option('-x','--twosec', default=False, help='Enable to force a different time cadence - enter the time in seconds')
+parser.add_option('-e','--freq_res', default=False, help='Enable to force a different freq bandwidth - enter the freq in MHz')
 parser.add_option('-c','--beam', default=False, action='store_true', help='Enable to apply beam to simulations')
 parser.add_option('-f','--freq_decor', default=False, action='store_true', help='Enable to switch on frequency decorrelation')
 parser.add_option('-g','--time_decor', default=False, action='store_true', help='Enable to switch on time decorrelation')
@@ -56,11 +57,13 @@ for key in ['DATE-OBS','FREQCENT','FINECHAN','INTTIME','BANDWDTH']:
 
 
 intial_date = f[0].header['DATE-OBS']
-dump_time = float(f[0].header['INTTIME'])
 
+dump_time = float(f[0].header['INTTIME'])
 if options.twosec: dump_time = float(options.twosec)
 
 ch_width = float(f[0].header['FINECHAN'])*1e+3
+if options.freq_res: ch_width = float(ch_width)*1e+6
+
 freqcent = float(f[0].header['FREQCENT'])*1e+6
 b_width = float(f[0].header['BANDWDTH'])*1e+6
 low_freq = freqcent - (b_width/2) - (ch_width/2)
