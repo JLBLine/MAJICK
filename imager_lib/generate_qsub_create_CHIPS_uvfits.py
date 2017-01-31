@@ -63,7 +63,7 @@ qsub_names = []
 
 for band_num in band_nums:
 	freq_start = float(options.freq_start) + (1.28 * (band_num - 1))
-	cmd = "python $MAJICK_DIR/imager_lib/create_CHIPS_uvfits.py --freq_start=%.5f --num_freqs=32 --freq_int=%s --time_start=%s --num_times=%s --time_int=%s --tag_name=%s --uvfits_tag=%s --band_num=%d --data_loc=%s" %(freq_start,options.freq_int,options.time_start,options.num_times,options.time_int,options.tag_name,options.uvfits_tag,int(band_num),options.data_loc)
+	cmd = "python $MAJICK_DIR/imager_lib/create_CHIPS_uvfits.py --freq_start=%.5f --num_freqs=32 --freq_int=%s --time_start=%s --num_times=%s --time_int=%s --tag_name=%s --uvfits_tag=%s --band_num=%d --data_loc=%s --time_res=%s --freq_res=%s" %(freq_start,options.freq_int,options.time_start,options.num_times,options.time_int,options.tag_name,options.uvfits_tag,int(band_num),options.data_loc,options.time_res,options.freq_res)
 	
 	file_name = 'qsub_%s_t%02d_f%.3f_%02d.sh' %(options.tag_name,time_int,freq_int,band_num)
 	qsub_names.append(file_name)
