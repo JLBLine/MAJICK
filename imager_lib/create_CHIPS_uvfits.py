@@ -129,6 +129,7 @@ template_baselines = base_data['BASELINE']
 
 ##Initial date is the time the first observation started
 intial_date = antenna_header['RDATE']
+print('intial_date',intial_date)
 
 ##This calculates half a time cadence in seconds
 half_time_cadence = num_time_avg * (uv_container.time_res / 2.0)
@@ -181,8 +182,6 @@ for time_start in range(0,len(uv_container.times),num_time_avg):
 						uvdata[i,1,0] = real(new_YY)
 						uvdata[i,1,1] = imag(new_YY)
 
-
-
 				sum_uvdata += uvdata
 		##Actual averaging loop----------------------
 		array_time_loc = num_baselines*time_step
@@ -198,20 +197,29 @@ for time_start in range(0,len(uv_container.times),num_time_avg):
 		
 		##This is the initial LST of this group of uvfits, and the centre of the first time step
 		intial_lst = uv_container.uv_data['%.3f_%05.2f' %(freq,time)].central_LST #- SOLAR2SIDEREAL*(15.0/3600.0)
+		print('intial_lst',intial_lst)
 
 		##In the following, find the LST and frequency at the centre of the set of
 		##visis being averaged over
 		##If averaging more than one time step together, need to find the offset of the
 		##central LST of the averaged time from the start of the set of times
 		if num_time_avg > 1:
-			half_time_cadence = num_time_avg * (uv_container.time_res / 2.0) * SOLAR2SIDEREAL*(15.0/3600.0)
+			##The centre of the averaged time cadence
+			half_time_cadence = (num_time_avg * uv_container.time_res) / 2.0
+			##Initial LST is for the centre of the intital time step, so half a time resolution
+			##after the beginning of the averaged time cadence
+			half_time_cadence -= uv_container.time_res / 2.0
+			half_time_cadence *= SOLAR2SIDEREAL*(15.0/3600.0)
+			#half_time_cadence = num_time_avg * (uv_container.time_res / 2.0) * SOLAR2SIDEREAL*(15.0/3600.0)
 		##the intial_lst is the central lst of the first time step, so if not averaging, don't
 		##need to add anything
 		else:
 			half_time_cadence = 0
+		print('half_time_cadence',half_time_cadence)
 		
 		central_lst = intial_lst + half_time_cadence 
 		if central_lst > 360: central_lst -= 360.0
+		print('central_lst',central_lst)
 
 		##Get some relevant positions and data
 		ra0,dec0 =  ra_phase*D2R,dec_phase*D2R
@@ -233,6 +241,8 @@ for time_start in range(0,len(uv_container.times),num_time_avg):
 		x_lengths = xyzs[:,0]
 		y_lengths = xyzs[:,1]
 		z_lengths = xyzs[:,2]
+		
+		print('dec0,h0',dec0,h0)
 		
 		##Calculate the u,v,w coords for all baselines at the centre of the integration
 		avg_uu, avg_vv, avg_ww = get_uvw_freq(x_length=x_lengths,y_length=y_lengths,z_length=z_lengths,dec=dec0,ha=h0,freq=central_frequency)
