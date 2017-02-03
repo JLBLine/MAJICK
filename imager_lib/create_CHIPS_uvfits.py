@@ -1,6 +1,7 @@
 from optparse import OptionParser
 from sys import exit
 from imager_lib import *
+from numpy import exp as np_exp
 
 def add_time(date_time,time_step):
 	'''Take the time string format that uvfits uses (DIFFERENT TO OSKAR!! '2013-08-23 17:54:32.0'), and add a time time_step (seconds).
@@ -75,8 +76,8 @@ parser.add_option('-i', '--data_loc', default='./',
 parser.add_option('-b', '--band_num',
 	help='RTS band number to name the output uvfits with')
 
-#parser.add_option('-p', '--phase_centre', default=False,
-	#help='Phase centre of the observation in degrees as RA,DEC - as a default tracks the intial zenith point')
+parser.add_option('-p', '--rephase', default=False,action='store_true',
+	help='Add to unwrap phase tracking of the current time cadence, and apply phase tracking for the new averaged time - i.e. if data is 2s cadence, undo any phase tracking average over new time cadence, say 8s, and apply phase trakcing using the w-term of the centre of the 8s time cadence')
 
 options, args = parser.parse_args()
 
@@ -168,15 +169,26 @@ for time_start in range(0,len(uv_container.times),num_time_avg):
 				time = uv_container.times[time_avg]
 				#print("time step %.2f, freq step %.3f"%(time,freq))
 				uvdata = uv_container.uv_data['%.3f_%05.2f' %(freq,time)].data
+				if options.rephase:
+					##if we need to rephase, undo original phase trakcing.
+					w = uv_container.uv_data['%.3f_%05.2f' %(freq,time)].ww
+					PhaseConst = -1 * 1j * 2 * pi
+					for i in xrange(len(w)):
+						new_XX = complex(uvdata[i,0,0],uvdata[i,0,1]) * np_exp(PhaseConst * w[i])
+						new_YY = complex(uvdata[i,1,0],uvdata[i,1,1]) * np_exp(PhaseConst * w[i])
+						uvdata[i,0,0] = real(new_XX)
+						uvdata[i,0,1] = imag(new_XX)
+						uvdata[i,1,0] = real(new_YY)
+						uvdata[i,1,1] = imag(new_YY)
+
+
+
 				sum_uvdata += uvdata
 		##Actual averaging loop----------------------
-		
+		array_time_loc = num_baselines*time_step
+
 		##Add data in order of baselines, then time step in axes 0 of v_container
 		##Each frequency average goes axes 4 of the v_container
-		
-		array_time_loc = num_baselines*time_step
-		v_container[array_time_loc:array_time_loc+num_baselines,0,0,freq_step,:,:] = sum_uvdata
-		freq_step += 1
 		
 		##First time and freq step of this cadence
 		freq = uv_container.freqs[freq_start]
@@ -229,6 +241,22 @@ for time_start in range(0,len(uv_container.times),num_time_avg):
 		uu[array_time_loc:array_time_loc+num_baselines] = avg_uu / central_frequency
 		vv[array_time_loc:array_time_loc+num_baselines] = avg_vv / central_frequency
 		ww[array_time_loc:array_time_loc+num_baselines] = avg_ww / central_frequency
+
+		##If rephasing, phase track to the new phase centre
+		if options.rephase:
+			PhaseConst = 1j * 2 * pi
+			for i in xrange(len(w)):
+		                new_XX = complex(sum_uvdata[i,0,0],uvdata[i,0,1]) * np_exp(PhaseConst * avg_ww[i])
+                                new_YY = complex(sum_uvdata[i,1,0],uvdata[i,1,1]) * np_exp(PhaseConst * avg_ww[i])
+                                sum_uvdata[i,0,0] = real(new_XX)
+                                sum_uvdata[i,0,1] = imag(new_XX)
+                                sum_uvdata[i,1,0] = real(new_YY)
+                                sum_uvdata[i,1,1] = imag(new_YY)
+
+		
+		##Add data in order of baselines, then time step in axes 0 of v_container
+                ##Each frequency average goes axes 4 of the v_container
+		v_container[array_time_loc:array_time_loc+num_baselines,0,0,freq_step,:,:] = sum_uvdata
 		
 		##Fill in the baselines using the first time and freq uvfits
 		baselines_array[array_time_loc:array_time_loc+num_baselines] = template_baselines
@@ -238,6 +266,8 @@ for time_start in range(0,len(uv_container.times),num_time_avg):
 		
 		adjust_float_jd_array = float_jd_array + (time_step * (time_int / (24.0*60.0*60.0)))
 		date_array[array_time_loc:array_time_loc+num_baselines] = adjust_float_jd_array
+
+		freq_step += 1
 		
 	time_step += 1
 	
@@ -319,6 +349,9 @@ antenna_header['FREQ'] = middle_pixel_value
 ## Create hdulist and write out file
 write_uvfits = fits.HDUList(hdus=[uvhdu,base_uvfits[1]])
 
-uvfits_name = "%s_t%02d_f%.3f_%02d.uvfits" %(tag_name,time_int,freq_int,band_num)
+if options.rephase:
+	uvfits_name = "%s_rephase_t%02d_f%.3f_%02d.uvfits" %(tag_name,time_int,freq_int,band_num)
+else:
+	uvfits_name = "%s_t%02d_f%.3f_%02d.uvfits" %(tag_name,time_int,freq_int,band_num)
 
 write_uvfits.writeto('%s/%s' %(data_loc,uvfits_name) ,clobber=True)
