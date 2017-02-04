@@ -198,10 +198,10 @@ def tdecorr_phasetrack(X=None,Y=None,Z=None,d0=None,h0=None,l=None,m=None,n=None
 	D_t = do_sinc(nu_pt*time_int)
 	return D_t
 
-def tdecorr_nophasetrack(u=None,d=None,H=None,t=None):
+def tdecorr_nophasetrack(u=None,dec_z=None,t=None):
 	'''Calculates the time decorrelation factor using u, at a given
 	sky position and time intergration'''
-	nu_fu=W_E*cos(d)*u
+	nu_fu=W_E*cos(dec_zen)*u
 	D_t=do_sinc(nu_fu*t)
 	return D_t
 

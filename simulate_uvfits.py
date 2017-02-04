@@ -288,7 +288,7 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 					pass
 				##Otherwise, proceed
 				else:
-					model_xxpol,model_yypol = model_vis_phasetrack(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
+					model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
 						x_length=x_length,y_length=y_length,z_length=z_length,freq_decor=freq_decor,freq=freq_cent,time_decor=time_decor,
 						time_int=time_res,chan_width=freq_res*1e+6,beam=options.beam)
 					
@@ -399,8 +399,8 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 
 		##----TESTCODE-------------------------------------------------------------
 		##-------------------------------------------------------------------------
-		#half_width = 4.0
-		#image_size = 1000
+		#half_width = 1.0
+		#image_size = 3051
 		#l_range = linspace(-half_width,half_width,2.0*image_size + 1)
 		#m_range = linspace(-half_width,half_width,2.0*image_size + 1)
 		#l_reso = (2.0*half_width) / (2.0*image_size + 1)
@@ -408,11 +408,11 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 		#l_off = int(options.l_value)
 		#m_off = 0
 		
-		#image = zeros((2.0*image_size+1,2.0*image_size+1))
+		#image = zeros((int(2.0*image_size+1),int(2.0*image_size+1)))
 		##image = zeros((2.0*image_size,2.0*image_size))
 		
 		#test_srclist = open('srclist_%03d.txt' %l_off,'w+')
-		#test_srclist_diff = open('srclist_diff_%03d.txt' %l_off,'w+')
+		##test_srclist_diff = open('srclist_diff_%03d.txt' %l_off,'w+')
 		
 		#l = l_range[image_size+l_off]
 		#m = m_range[image_size+m_off]
@@ -427,14 +427,14 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 		#test_srclist.write('FREQ 180e+6 1.0 0 0 0\n')
 		#test_srclist.write('ENDSOURCE\n')
 		
-		#test_srclist_diff.write('SOURCE bleh%d%d %.5f %.5f\n' %(l_off,m_off,(ra_source/15.0)+arcsin(l_reso),dec_source))
-		#test_srclist_diff.write('FREQ 160e+6 1.0 0 0 0\n')
-		#test_srclist_diff.write('FREQ 180e+6 1.0 0 0 0\n')
-		#test_srclist_diff.write('ENDSOURCE\n')
+		##test_srclist_diff.write('SOURCE bleh%d%d %.5f %.5f\n' %(l_off,m_off,(ra_source/15.0)+arcsin(l_reso),dec_source))
+		##test_srclist_diff.write('FREQ 160e+6 1.0 0 0 0\n')
+		##test_srclist_diff.write('FREQ 180e+6 1.0 0 0 0\n')
+		##test_srclist_diff.write('ENDSOURCE\n')
 		
 		#test_srclist.close()
-		#test_srclist_diff.close()
-			#print('ra_source,dec_source',ra_source,dec_source)
+		##test_srclist_diff.close()
+			##print('ra_source,dec_source',ra_source,dec_source)
 			
 		##-------------------------------------------------------------------------
 		##----END TESTCODE---------------------------------------------------------
@@ -487,7 +487,6 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 				
 				write_data[baseline][5][0,0,0,0,0,:] += array([real(uv_complex_XX),imag(uv_complex_XX),0.0000])
 				write_data[baseline][5][0,0,0,0,1,:] += array([real(uv_complex_YY),imag(uv_complex_YY),0.0000])
-			
 		print '%04d out of %04d baselines skipped in gsm, u,v point outside gsm uv data plane' %(skipped_gsm,len(base_data))
 	
 	if time_res < 1:
@@ -495,7 +494,7 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 	else:
 		uvfits_name = "%s_%.3f_%02d.uvfits" %(tag_name,freq,int(time))
 	
-	write_uvfits.writeto('%s/%s' %(data_loc,uvfits_name) ,clobber=True)
+	write_uvfits.writeto('%s/%s' %(data_loc,uvfits_name) ,overwrite=True)
 	return
 	
 if options.multi_process:

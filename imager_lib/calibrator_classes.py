@@ -253,68 +253,68 @@ def weight_by_beam(source=None,freqcent=None,LST=None,delays=None,beam=False,fix
 				source.XX_beam.append(final_XX)
 				source.YY_beam.append(final_YY)
 		
-def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,phase_dec=None,LST=None,x_length=None,y_length=None,z_length=None,time_decor=False,freq_decor=False,beam=False,freq=None):   ##,sources=None
-	# V(u,v) = integral(I(l,m)*exp(i*2*pi*(ul+vm)) dl dm)
-	vis_XX = complex(0,0)
-	vis_YY = complex(0,0)
-	sign = +1
-	PhaseConst = 1j * 2 * pi * sign
+#def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,phase_dec=None,LST=None,x_length=None,y_length=None,z_length=None,time_decor=False,freq_decor=False,beam=False,freq=None):   ##,sources=None
+	## V(u,v) = integral(I(l,m)*exp(i*2*pi*(ul+vm)) dl dm)
+	#vis_XX = complex(0,0)
+	#vis_YY = complex(0,0)
+	#sign = +1
+	#PhaseConst = 1j * 2 * pi * sign
 	
-	tot_decor = 0
+	#tot_decor = 0
 
-	phase_ra *= D2R
-	phase_dec *= D2R
+	#phase_ra *= D2R
+	#phase_dec *= D2R
 
-	##For each component in the source
-	for i in xrange(len(source.ras)):
+	###For each component in the source
+	#for i in xrange(len(source.ras)):
 		
-		ra,dec,flux = source.ras[i],source.decs[i],source.extrap_fluxs[i]
+		#ra,dec,flux = source.ras[i],source.decs[i],source.extrap_fluxs[i]
 		
-		phase_ha = LST*D2R - phase_ra
-		ha = (LST - ra)*D2R
-		##Here phase_ra, phase_dec should be zenith
-		l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
-		this_vis = (flux * exp(PhaseConst*(u*l + v*m + w*n)))
+		#phase_ha = LST*D2R - phase_ra
+		#ha = (LST - ra)*D2R
+		###Here phase_ra, phase_dec should be zenith
+		#l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
+		#this_vis = (flux * exp(PhaseConst*(u*l + v*m + w*n)))
 
-		##Turn this on to add in phase tracking
-		#this_vis = (flux * exp(PhaseConst*(u*l + v*m + w*(n-1))))
+		###Turn this on to add in phase tracking
+		##this_vis = (flux * exp(PhaseConst*(u*l + v*m + w*(n-1))))
 		
-		##Add in decor if asked for
-		if time_decor:
-			#l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
-			#phase_ha = LST*D2R - phase_ra
-			##For MWA obs, need to input phase_ra,phase_dec as zenith
-			#print(time_decor)
-			#print(phase_dec,phase_ha)
-			tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=phase_dec,h0=phase_ha,l=l,m=m,n=n,time_int=time_decor)
-			#u, v, w = get_uvw(x_length,y_length,z_length,phase_dec,phase_ha)
-			#tdecor = tdecorr_nophasetrack(u=u,d=dec*D2R,H=ha,t=time_decor)
+		###Add in decor if asked for
+		#if time_decor:
+			##l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
+			##phase_ha = LST*D2R - phase_ra
+			###For MWA obs, need to input phase_ra,phase_dec as zenith
+			##print(time_decor)
+			##print(phase_dec,phase_ha)
+			#tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=phase_dec,h0=phase_ha,l=l,m=m,n=n,time_int=time_decor)
+			##u, v, w = get_uvw(x_length,y_length,z_length,phase_dec,phase_ha)
+			##tdecor = tdecorr_nophasetrack(u=u,d=dec*D2R,H=ha,t=time_decor)
 			
-			#print(tdecor) 
-			this_vis *= tdecor
-			tot_decor += tdecor
+			##print(tdecor) 
+			#this_vis *= tdecor
+			#tot_decor += tdecor
 			
-		##Add in decor if asked for
-		if freq_decor:
-			#l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
-			#phase_ha = LST*D2R - phase_ra
-			u,v,w = get_uvw(x_length,y_length,z_length,phase_dec,phase_ha)
-			fdecor = fdecorr(u=u,v=v,w=w,l=l,m=m,n=n,chan_width=freq_decor,freq=freq,phasetrack=True)
-			this_vis *= fdecor
+		###Add in decor if asked for
+		#if freq_decor:
+			##l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
+			##phase_ha = LST*D2R - phase_ra
+			#u,v,w = get_uvw(x_length,y_length,z_length,phase_dec,phase_ha)
+			#fdecor = fdecorr(u=u,v=v,w=w,l=l,m=m,n=n,chan_width=freq_decor,freq=freq,phasetrack=True)
+			#this_vis *= fdecor
 	
-		if beam:
-			vis_XX += (this_vis * source.XX_beam[i])
-			vis_YY += (this_vis * source.YY_beam[i])
-		else:
-			vis_XX += this_vis
-			vis_YY += this_vis
+		#if beam:
+			#vis_XX += (this_vis * source.XX_beam[i])
+			#vis_YY += (this_vis * source.YY_beam[i])
+		#else:
+			#vis_XX += this_vis
+			#vis_YY += this_vis
 			
-	return vis_XX,vis_YY
+	#return vis_XX,vis_YY
 
-def model_vis_phasetrack(u=None,v=None,w=None,source=None,phase_ra=None,
+def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,
 		phase_dec=None,LST=None,x_length=None,y_length=None,z_length=None,
 		time_decor=False,freq_decor=False,beam=False,freq=None,time_int=None,
-		chan_width=None,fix_beam=False):   ##,sources=None
+		chan_width=None,fix_beam=False,phasetrack=True):   ##,sources=None
 	'''Generates model visibilities for a phase tracking correlator'''
 	# V(u,v) = integral(I(l,m)*exp(i*2*pi*(ul+vm)) dl dm)
 	vis_XX = complex(0,0)
@@ -333,8 +333,11 @@ def model_vis_phasetrack(u=None,v=None,w=None,source=None,phase_ra=None,
 		
 		##TODO - l,m,n should be constant if phasetracking - pull out of loop somehow?
 		l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
-		this_vis = (flux * exp(PhaseConst*(u*l + v*m + w*(n-1))))
 		
+		if phasetrack:
+			this_vis = flux * exp(PhaseConst*(u*l + v*m + w*(n-1)))
+		else:
+			this_vis = flux * exp(PhaseConst*(u*l + v*m + w*n))
 		##Add in decor if asked for
 		if time_decor:
 			tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=phase_dec,h0=phase_ha,l=l,m=m,n=n,time_int=time_int)
@@ -342,7 +345,7 @@ def model_vis_phasetrack(u=None,v=None,w=None,source=None,phase_ra=None,
 			
 		##Add in decor if asked for
 		if freq_decor:
-			fdecor = fdecorr(u=u,v=v,w=w,l=l,m=m,n=n,chan_width=chan_width,freq=freq,phasetrack=True)
+			fdecor = fdecorr(u=u,v=v,w=w,l=l,m=m,n=n,chan_width=chan_width,freq=freq,phasetrack=phasetrack)
 			this_vis *= fdecor
 	
 		if beam:
