@@ -87,7 +87,7 @@ for band_num in band_nums:
 	
 	base_freq = ((band_num - 1)*(b_width/24.0)) + low_freq
 
-	sim_command = "time python $MAJICK_DIR/simulate_uvfits.py"
+	sim_command = "time python $MAJICK_DIR/simulate_uvfits.py --clobber"
 	sim_command += " --freq_start=%.5f" %(base_freq / 1e+6)
 	sim_command += " --num_freqs=%d" %int(1.28e+6 / ch_width)
 	sim_command += " --freq_res=%.5f" %(ch_width / 1e+6)

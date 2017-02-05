@@ -91,6 +91,9 @@ parser.add_option('-s', '--srclist', default=False,
 parser.add_option('-t', '--time_start', 
 	help='Enter lowest time offset from start date to simulate (s)')
 
+parser.add_option('-u', '--clobber',default=False,action='store_true',
+        help='Add to change "overwrite" to "clobber" - astropy on gstar is old version')
+
 parser.add_option('-x', '--time_res', default=2.0,
 	help='Enter time resolution (s) of observations, default=2.0')
 
@@ -493,8 +496,10 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 		uvfits_name = "%s_%.3f_%05.2f.uvfits" %(tag_name,freq,time)
 	else:
 		uvfits_name = "%s_%.3f_%02d.uvfits" %(tag_name,freq,int(time))
-	
-	write_uvfits.writeto('%s/%s' %(data_loc,uvfits_name) ,overwrite=True)
+	if options.clobber:
+		write_uvfits.writeto('%s/%s' %(data_loc,uvfits_name) ,clobber=True)
+	else:	
+		write_uvfits.writeto('%s/%s' %(data_loc,uvfits_name) ,overwrite=True)
 	return
 	
 if options.multi_process:
