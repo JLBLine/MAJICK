@@ -94,6 +94,9 @@ parser.add_option('-t', '--time_start',
 parser.add_option('-u', '--clobber',default=False,action='store_true',
         help='Add to change "overwrite" to "clobber" - astropy on gstar is old version')
 
+parser.add_option('-v', '--no_phase_tracking',default=False,action='store_true',
+        help='Add to turn off phase tracking')
+
 parser.add_option('-x', '--time_res', default=2.0,
 	help='Enter time resolution (s) of observations, default=2.0')
 
@@ -136,6 +139,8 @@ MRO.date = '/'.join(date.split('-'))+' '+time
 intial_lst = float(MRO.sidereal_time())*R2D
 intial_ra_point = float(MRO.sidereal_time())*R2D
 dec_point = MWA_LAT
+
+print('intial_ra_point', intial_ra_point)
 
 if options.phase_centre:
 	ra_phase, dec_phase = map(float,options.phase_centre.split(','))
@@ -277,8 +282,10 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 		#for baseline in range(0,1):
 			x_length,y_length,z_length = xyz_lengths[baseline]
 			##The old way of non-phase tracking
-			#u,v,w = get_uvw(x_length,y_length,z_length,dec_point*D2R,ha_point*D2R)
-			u,v,w = get_uvw(x_length,y_length,z_length,dec_phase*D2R,ha_phase*D2R)
+			if options.no_phase_tracking:
+				u,v,w = get_uvw(x_length,y_length,z_length,dec_point*D2R,ha_point*D2R)
+			else:
+				u,v,w = get_uvw(x_length,y_length,z_length,dec_phase*D2R,ha_phase*D2R)
 		
 			#print 'Adding point sources'
 			uv_data_XX = array([0.0,0.0,1.0])
@@ -291,10 +298,15 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 					pass
 				##Otherwise, proceed
 				else:
-					model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
-						x_length=x_length,y_length=y_length,z_length=z_length,freq_decor=freq_decor,freq=freq_cent,time_decor=time_decor,
-						time_int=time_res,chan_width=freq_res*1e+6,beam=options.beam)
-					
+					if options.no_phase_tracking:
+						model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_point,phase_dec=dec_point,LST=lst,
+							x_length=x_length,y_length=y_length,z_length=z_length,freq_decor=freq_decor,freq=freq_cent,time_decor=time_decor,
+							time_int=time_res,chan_width=freq_res*1e+6,beam=options.beam,phasetrack=False)
+					else:
+						model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
+							x_length=x_length,y_length=y_length,z_length=z_length,freq_decor=freq_decor,freq=freq_cent,time_decor=time_decor,
+							time_int=time_res,chan_width=freq_res*1e+6,beam=options.beam,phasetrack=True)
+						
 					uv_data_XX += array([real(model_xxpol),imag(model_xxpol),0.0000])
 					uv_data_YY += array([real(model_yypol),imag(model_yypol),0.0000])
 			
@@ -497,9 +509,9 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
 	else:
 		uvfits_name = "%s_%.3f_%02d.uvfits" %(tag_name,freq,int(time))
 	if options.clobber:
-		write_uvfits.writeto('%s/%s' %(data_loc,uvfits_name) ,clobber=True)
+		write_uvfits.writeto('%s/%s' %(data_loc,uvfits_name), clobber=True)
 	else:	
-		write_uvfits.writeto('%s/%s' %(data_loc,uvfits_name) ,overwrite=True)
+		write_uvfits.writeto('%s/%s' %(data_loc,uvfits_name), overwrite=True)
 	return
 	
 if options.multi_process:

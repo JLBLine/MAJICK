@@ -340,7 +340,10 @@ def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,
 			this_vis = flux * exp(PhaseConst*(u*l + v*m + w*n))
 		##Add in decor if asked for
 		if time_decor:
-			tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=phase_dec,h0=phase_ha,l=l,m=m,n=n,time_int=time_int)
+			if phasetrack:
+				tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=phase_dec,h0=phase_ha,l=l,m=m,n=n,time_int=time_int)
+			else:
+				tdecor = tdecorr_nophasetrack(X=x_length,Y=y_length,dec_s=dec*D2R,ha_s=ha,t=time_int)
 			this_vis *= tdecor
 			
 		##Add in decor if asked for

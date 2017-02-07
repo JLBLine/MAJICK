@@ -109,6 +109,7 @@ def generate_gsm_2016(freq=None,this_date=None,observer=None):
 	##Manually fudged with * 5e+4 based on comparison to real data :-/
 	sky_view = np.array(sky_view) * 5e+4 * (((0.8*np.pi) / 180.0))**2
 	sky_view[sky_view == -np.inf] = 0
+	sky_view = sky_view[:,::-1]
 	
 	l_reso = 2.0 / sky_view.shape[0]
 	

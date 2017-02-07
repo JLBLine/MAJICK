@@ -68,12 +68,12 @@ class Imager(object):
 		self.freq_int = freq_int
 		self.kernel = kernel
 		
-	def sum_visi_at_source(self,predict_tdecor=False,verbose=False,apply_tdecor=False,beam=False):
+	def sum_visi_at_source(self,predict_tdecor=False,verbose=False,apply_tdecor=False,beam=False,phasetrack=True):
 		try:
 			cali_src_info = open(self.srclist,'r').read().split('ENDSOURCE')
 			del cali_src_info[-1]
 		except:
-			print("Cannot open %s, not sure where to sum the visibilities for you without positions" %self.srclist)
+			print("Cannot open %s, not sure where to sum the visibilities for you without positions" %(self.srclist))
 			exit(1)
 			
 		calibrator_sources = {}
@@ -135,13 +135,18 @@ class Imager(object):
 				##If averaging more than one time step together, need to find the offset of the
 				##central LST of the averaged time from the start of the set of times
 				if num_time_avg > 1:
-					half_time_cadence = num_time_avg * (self.uv_container.time_res / 2.0) * SOLAR2SIDEREAL*(15.0/3600.0)
+					##The centre of the averaged time cadence
+					half_time_cadence = (num_time_avg * self.uv_container.time_res) / 2.0
+					##Initial LST is for the centre of the intital time step, so half a time resolution
+					##after the beginning of the averaged time cadence
+					half_time_cadence -= self.uv_container.time_res / 2.0
+					half_time_cadence *= SOLAR2SIDEREAL*(15.0/3600.0)
+					#half_time_cadence = num_time_avg * (uv_container.time_res / 2.0) * SOLAR2SIDEREAL*(15.0/3600.0)
 				##the intial_lst is the central lst of the first time step, so if not averaging, don't
 				##need to add anything
 				else:
 					half_time_cadence = 0
-				#half_time_cadence = 0
-				
+					
 				central_lst = intial_lst + half_time_cadence 
 				if central_lst > 360: central_lst -= 360.0
 				sum_pixel.lst = central_lst
@@ -154,7 +159,9 @@ class Imager(object):
 				##If averaging over more than one frequeny, work out distance
 				##of cadence centre to start of cadence
 				if num_freq_avg > 1:
-					half_freq_cadence = num_freq_avg * (self.uv_container.freq_res / 2.0) * 1e+6
+					half_freq_cadence = (num_freq_avg * self.uv_container.freq_res) / 2.0
+					half_freq_cadence -= self.uv_container.freq_res / 2.0
+					half_freq_cadence *= 1e+6
 				else:
 					half_freq_cadence = 0
 					
@@ -229,8 +236,11 @@ class Imager(object):
 							##Undo phase tracking by muliplying by the inverse of the original phase track,
 							##then phase to src position by multiplying by phase of w_src
 							PhaseConst = 1j * 2 * pi
-							rotate_xx_complex = sum_xxpol_comps[visi_ind] * exp(PhaseConst*(w_src - avg_ww[visi_ind]))
 							
+							if phasetrack:
+								rotate_xx_complex = sum_xxpol_comps[visi_ind] * exp(PhaseConst*(w_src - avg_ww[visi_ind]))
+							else:
+								rotate_xx_complex = sum_xxpol_comps[visi_ind] * exp(PhaseConst*(w_src))
 							#out_uv.write('%.10f %.10f %.10f %.10f %.10f %.10f %.10f %.10f\n' %(u_phase,v_phase,w_phase,real(rotate_xx_complex),imag(rotate_xx_complex),x_length,y_length,z_length))
 							
 							###Sum the visibilities

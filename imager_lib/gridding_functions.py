@@ -198,10 +198,10 @@ def tdecorr_phasetrack(X=None,Y=None,Z=None,d0=None,h0=None,l=None,m=None,n=None
 	D_t = do_sinc(nu_pt*time_int)
 	return D_t
 
-def tdecorr_nophasetrack(u=None,dec_z=None,t=None):
+def tdecorr_nophasetrack(X=None,Y=None,dec_s=None,ha_s=None,t=None):
 	'''Calculates the time decorrelation factor using u, at a given
 	sky position and time intergration'''
-	nu_fu=W_E*cos(dec_zen)*u
+	nu_fu= -W_E*cos(dec_s)*(sin(ha_s)*X + cos(ha_s)*Y)
 	D_t=do_sinc(nu_fu*t)
 	return D_t
 
@@ -209,6 +209,7 @@ def fdecorr(u=None,v=None,w=None,l=None,m=None,n=None,chan_width=None,freq=None,
 	'''Calculates the frequency decorrelation factor for a baseline u,v,w
 	at a given sky position l,m,n, for a given channel width and frequency
 	Assumes no phase tracking - add phasetrack=True to set w(n-1)'''
+	
 	if phasetrack:
 		D_f = do_sinc((chan_width / freq) * (u*l + v*m + w*(n-1)))
 	else:
