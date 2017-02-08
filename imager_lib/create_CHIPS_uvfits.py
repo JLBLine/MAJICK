@@ -257,6 +257,10 @@ for time_start in range(0,len(uv_container.times),num_time_avg):
                                 sum_uvdata[i,1,0] = real(new_YY)
                                 sum_uvdata[i,1,1] = imag(new_YY)
 
+		##FIX DE CHIPS???
+		sum_uvdata[:,:,0] = sum_uvdata[:,:,0] / sum_uvdata[:,:,2]
+		sum_uvdata[:,:,1] = sum_uvdata[:,:,1] / sum_uvdata[:,:,2]
+		sum_uvdata[:,:,2] = sum_uvdata[:,:,2] / sum_uvdata[:,:,2]
 		
 		##Add data in order of baselines, then time step in axes 0 of v_container
                 ##Each frequency average goes axes 4 of the v_container
