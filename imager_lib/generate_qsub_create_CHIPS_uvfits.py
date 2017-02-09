@@ -43,8 +43,8 @@ parser.add_option('-i', '--data_loc', default='./',
 parser.add_option('-b', '--band_nums',
 	help='Which band numbers to process separated by a comma e.g. 1,5,9')
 
-#parser.add_option('-p', '--phase_centre', default=False,
-	#help='Phase centre of the observation in degrees as RA,DEC - as a default tracks the intial zenith point')
+parser.add_option('-p', '--rephase', default=False,action='store_true',
+	help='Unwrap original phase tracking, average, and then phase track in the new averaged time cadence')
 
 options, args = parser.parse_args()
 
@@ -65,13 +65,18 @@ for band_num in band_nums:
 	freq_start = float(options.freq_start) + (1.28 * (band_num - 1))
 	cmd = "python $MAJICK_DIR/imager_lib/create_CHIPS_uvfits.py --freq_start=%.5f --num_freqs=32 --freq_int=%s --time_start=%s --num_times=%s --time_int=%s --tag_name=%s --uvfits_tag=%s --band_num=%d --data_loc=%s --time_res=%s --freq_res=%s" %(freq_start,options.freq_int,options.time_start,options.num_times,options.time_int,options.tag_name,options.uvfits_tag,int(band_num),options.data_loc,options.time_res,options.freq_res)
 	
-	file_name = 'qsub_%s_t%02d_f%.3f_%02d.sh' %(options.tag_name,time_int,freq_int,band_num)
+	if options.rephase:
+		cmd += ' --rephase'
+		file_name = 'qsub_%s_rephase_t%02d_f%.3f_%02d.sh' %(options.tag_name,time_int,freq_int,band_num)
+	else:
+		file_name = 'qsub_%s_t%02d_f%.3f_%02d.sh' %(options.tag_name,time_int,freq_int,band_num)
 	qsub_names.append(file_name)
 	out_file = open(file_name,'w+')
 	out_file.write('#!/bin/bash\n')
 	out_file.write('#PBS -l nodes=1\n')
 	
 	out_file.write('#PBS -l walltime=01:00:00\n')
+	out_file.write('#PBS -l mem=3G\n')
 	out_file.write('#PBS -m e\n')
 	out_file.write('#PBS -q sstar\n')
 	out_file.write('#PBS -A p048_astro\n')
@@ -85,7 +90,14 @@ for band_num in band_nums:
 os.chdir(cwd)
 
 ##Write out a controlling bash script to launch all the jobs
-out_file = open('run_all_chipsuvfits_%s_t%02d_f%.3f.sh' %(options.tag_name,time_int,freq_int),'w+')
+
+if options.rephase:
+	outfile_name = 'run_all_chipsuvfits_%s_rephase_t%02d_f%.3f.sh' %(options.tag_name,time_int,freq_int)
+
+else:
+	outfile_name = 'run_all_chipsuvfits_%s_t%02d_f%.3f.sh' %(options.tag_name,time_int,freq_int)
+
+out_file = open(outfile_name,'w+')
 out_file.write('#!/bin/bash\n')
 for qsub in qsub_names:
 	out_file.write('MAIN_RUN=$(qsub ./qsub_uvfits/%s | cut -d "." -f 1)\n' %qsub)
