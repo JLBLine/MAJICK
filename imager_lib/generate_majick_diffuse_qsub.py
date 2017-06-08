@@ -95,7 +95,7 @@ for band_num in band_nums:
     sim_command += " --data_loc=%s" %options.data_loc
     sim_command += " --telescope=%s" %options.telescope
     sim_command += " --base_uvfits=%s" %options.base_uvfits
-    sim_command += " --diffuse --clobber"
+    sim_command += " --diffuse"
     if options.beam:
         sim_command += " --beam"
     if options.phase_centre:
@@ -126,6 +126,8 @@ for band_num in band_nums:
     out_file.write('#PBS -A p048_astro\n')
 
     out_file.write('source /home/jline/.bash_profile\n')
+    ##Stupid gstar astropy version too old for numpy version
+    out_file.write('export PYTHONPATH=/lustre/projects/p048_astro/jline/software/astropy-1.3.3/build/lib.linux-x86_64-2.7:$PYTHONPATH\n')
     out_file.write('cd %s\n' %wd)
     out_file.write(sim_command+'\n')
     
