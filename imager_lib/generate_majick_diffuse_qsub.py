@@ -95,7 +95,7 @@ for band_num in band_nums:
     sim_command += " --data_loc=%s" %options.data_loc
     sim_command += " --telescope=%s" %options.telescope
     sim_command += " --base_uvfits=%s" %options.base_uvfits
-    sim_command += " --diffuse"
+    sim_command += " --diffuse --clobber"
     if options.beam:
         sim_command += " --beam"
     if options.phase_centre:
