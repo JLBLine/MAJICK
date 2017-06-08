@@ -22,7 +22,7 @@ parser.add_option('-g','--time_decor', default=False, action='store_true', help=
 parser.add_option('-p','--phase_centre', default=False, help='Specify phase centre; enter as ra_phase,dec_phase (deg)')
 parser.add_option('-a','--telescope', default='MWA_phase1', help='Enter telescope used for simulation. Default = MWA_phase1')
 parser.add_option('-b','--band_nums', help='Enter band numbers to simulate, separated by a comma eg 1,3,4')
-parser.add_option('-i', '--data_loc', default='./data',	help='Location to output the uvfits to OR location of uvfits if just adding diffuse model. Default = ./data')
+parser.add_option('-i', '--data_loc', default='./data',    help='Location to output the uvfits to OR location of uvfits if just adding diffuse model. Default = ./data')
 parser.add_option('-e','--base_uvfits', help='Enter srclist to base sky model on')
 parser.add_option('-z','--fix_beam', default=False, action='store_true', help='Enable to switch on fixed beam observation')
 
@@ -30,28 +30,28 @@ options, args = parser.parse_args()
 debug = options.debug
 
 def run_command(cmd):
-	if debug: print cmd
-	call(cmd,shell=True)
-	
+    if debug: print cmd
+    call(cmd,shell=True)
+    
 ##Open the metafits file and get the relevant info
 try:
-	import pyfits
+    import pyfits
 except ImportError:
-	import astropy.io.fits as pyfits
+    import astropy.io.fits as pyfits
 
 try:
-	f=pyfits.open(options.metafits)
+    f=pyfits.open(options.metafits)
 except Exception,e:
-	print 'Unable to open metafits file %s: %s' % (options.metafits,e)
-	exit(1)
-	
+    print 'Unable to open metafits file %s: %s' % (options.metafits,e)
+    exit(1)
+    
 def test_avail(key):
-	if not key in f[0].header.keys():
-		print 'Cannot find %s in %s' % (key,options.metafits)
-		exit(1)
+    if not key in f[0].header.keys():
+        print 'Cannot find %s in %s' % (key,options.metafits)
+        exit(1)
 
 for key in ['DATE-OBS','FREQCENT','FINECHAN','INTTIME','BANDWDTH']:
-	test_avail(key)
+    test_avail(key)
 
 
 intial_date = f[0].header['DATE-OBS']
@@ -80,64 +80,63 @@ os.chdir(wd)
 qsub_names = []
 
 for band_num in band_nums:
-	
-	base_freq = ((band_num - 1)*(b_width/24.0)) + low_freq
+    
+    base_freq = ((band_num - 1)*(b_width/24.0)) + low_freq
 
-	sim_command = "time python $MAJICK_DIR/simulate_uvfits.py"
-	sim_command += " --freq_start=%.5f" %(base_freq / 1e+6)
-	sim_command += " --num_freqs=32"
-	sim_command += " --freq_res=%.5f" %(ch_width / 1e+6)
-	sim_command += " --time_start=%.5f " %start_tstep
-	sim_command += " --num_times=%d" %len(tsteps)
-	sim_command += " --time_res=%.5f" %dump_time
-	sim_command += " --date=%s" %intial_date
-	sim_command += " --tag_name=%s" %options.output_name
-	sim_command += " --data_loc=%s" %options.data_loc
-	sim_command += " --telescope=%s" %options.telescope
-	sim_command += " --base_uvfits=%s" %options.base_uvfits
-	sim_command += " --diffuse"
-	if options.beam:
-		sim_command += " --beam"
-	if options.phase_centre:
-		sim_command += " --phase_centre=%s" %options.phase_centre
-	if options.time_decor:
-		sim_command += " --time_decor"
-	if options.freq_decor:
-		sim_command += " --freq_decor"
-	if options.fix_beam:
-		sim_command += " --fix_beam"
+    sim_command = "time python $MAJICK_DIR/simulate_uvfits.py"
+    sim_command += " --freq_start=%.5f" %(base_freq / 1e+6)
+    sim_command += " --num_freqs=32"
+    sim_command += " --freq_res=%.5f" %(ch_width / 1e+6)
+    sim_command += " --time_start=%.5f " %start_tstep
+    sim_command += " --num_times=%d" %len(tsteps)
+    sim_command += " --time_res=%.5f" %dump_time
+    sim_command += " --date=%s" %intial_date
+    sim_command += " --tag_name=%s" %options.output_name
+    sim_command += " --data_loc=%s" %options.data_loc
+    sim_command += " --telescope=%s" %options.telescope
+    sim_command += " --base_uvfits=%s" %options.base_uvfits
+    sim_command += " --diffuse"
+    if options.beam:
+        sim_command += " --beam"
+    if options.phase_centre:
+        sim_command += " --phase_centre=%s" %options.phase_centre
+    if options.time_decor:
+        sim_command += " --time_decor"
+    if options.freq_decor:
+        sim_command += " --freq_decor"
+    if options.fix_beam:
+        sim_command += " --fix_beam"
 
-	file_name = 'qsub_%s_band%02d_t%d-%d.sh' %(options.output_name,band_num,int(tsteps[0]),int(tsteps[-1]))
-	qsub_names.append(file_name)
-	out_file = open(file_name,'w+')
-	out_file.write('#!/bin/bash\n')
-	out_file.write('#PBS -l nodes=1\n')
-	
-	##Takes 3min with 100 source per freq / time
-	##For 32 freqs that means 96 mins per time step
-	##Round up to 100 for safety
-	
-	num_time_steps = len(tsteps)
-	hours = num_time_steps * (70.0 / 60.0)
-	hours = ceil(hours)
-	
-	out_file.write('#PBS -l walltime=%02d:00:00\n' %int(hours) )
-	out_file.write('#PBS -m e\n')
-	out_file.write('#PBS -q sstar\n')
-	out_file.write('#PBS -A p048_astro\n')
+    file_name = 'qsub_%s_band%02d_t%d-%d.sh' %(options.output_name,band_num,int(tsteps[0]),int(tsteps[-1]))
+    qsub_names.append(file_name)
+    out_file = open(file_name,'w+')
+    out_file.write('#!/bin/bash\n')
+    out_file.write('#PBS -l nodes=1\n')
+    
+    ##Takes around 4 mins per time step to sim all 
+    ##say 260s for safety
+    
+    num_time_steps = len(tsteps)
+    hours = (num_time_steps * 260.0) / 3600.0
+    hours = ceil(hours)
+    
+    out_file.write('#PBS -l walltime=%02d:00:00\n' %int(hours) )
+    out_file.write('#PBS -m e\n')
+    out_file.write('#PBS -q sstar\n')
+    out_file.write('#PBS -A p048_astro\n')
 
-	out_file.write('source /home/jline/.bash_profile\n')
-	out_file.write('cd %s\n' %wd)
-	out_file.write(sim_command+'\n')
-	
-	out_file.close()
-	
+    out_file.write('source /home/jline/.bash_profile\n')
+    out_file.write('cd %s\n' %wd)
+    out_file.write(sim_command+'\n')
+    
+    out_file.close()
+    
 os.chdir(cwd)
 
 ##Write out a controlling bash script to launch all the jobs
 out_file = open('run_all_majicksim_%s.sh' %options.output_name,'w+')
 out_file.write('#!/bin/bash\n')
 for qsub in qsub_names:
-	out_file.write('MAIN_RUN=$(qsub ./qsub_majick/%s | cut -d "." -f 1)\n' %qsub)
-	out_file.write('echo $MAIN_RUN\n')
+    out_file.write('MAIN_RUN=$(qsub ./qsub_majick/%s | cut -d "." -f 1)\n' %qsub)
+    out_file.write('echo $MAIN_RUN\n')
 out_file.close()
