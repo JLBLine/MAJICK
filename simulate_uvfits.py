@@ -97,6 +97,9 @@ parser.add_option('-u', '--clobber',default=False,action='store_true',
 parser.add_option('-v', '--no_phase_tracking',default=False,action='store_true',
     help='Add to turn off phase tracking')
 
+parser.add_option('-w', '--add_to_existing',default=False,action='store_true',
+    help='Add to add simulations to previous uvfits')
+
 parser.add_option('-x', '--time_res', default=2.0,
     help='Enter time resolution (s) of observations, default=2.0')
 
@@ -215,7 +218,7 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
     print freq,time
     freq_cent = ((freq + freq_res / 2.0)*1e+6)
     
-    if not srclist:
+    if not srclist or options.add_to_existing:
         if time_res < 1:
             base_uvfits = fits.open("%s_%.3f_%05.2f.uvfits" %(options.base_uvfits,freq,time))
         else:
@@ -269,7 +272,7 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
     #print 'srclist has been weighted by freq and beam'
     ##GSM image and uv_data_array are the same for all baselines, for each time and freq
     
-    if srclist:
+    if srclist and not options.add_to_existing:
         # Create uv structure by hand, probably there is a better way of doing this but the uvfits structure is kind of finicky
         n_freq = 1 # only one frequency per uvfits file as read by the RTS
         n_data = len(base_data)
@@ -526,7 +529,58 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
                 write_data[baseline][5][0,0,0,0,0,:] += array([real(uv_complex_XX),imag(uv_complex_XX),0.0000])
                 write_data[baseline][5][0,0,0,0,1,:] += array([real(uv_complex_YY),imag(uv_complex_YY),0.0000])
         print '%04d out of %04d baselines skipped in gsm, u,v point outside gsm uv data plane' %(skipped_gsm,len(base_data))
+        
+    if options.add_to_existing:
+        #if not options.srclist:
+        write_uvfits = base_uvfits
+        write_data = base_uvfits[0].data
+        write_header = base_uvfits[0].header
+        antenna_table = base_uvfits[1].data
+        antenna_header = base_uvfits[1].header
+            
+        ra0,dec0 = ra_phase*D2R,dec_phase*D2R
+        phase_centre = [ra0,dec0]
     
+        for name,source in sources.iteritems():
+            weight_by_beam(source=source,freqcent=freq_cent,LST=lst,delays=delays,beam=options.beam,fix_beam=options.fix_beam)
+        
+        for baseline in xrange(len(base_data)):
+            #print 'Simulating baseline %04d' %baseline
+        #for baseline in range(0,1):
+            x_length,y_length,z_length = xyz_lengths[baseline]
+            ##The old way of non-phase tracking
+            if options.no_phase_tracking:
+                u,v,w = get_uvw(x_length,y_length,z_length,dec_point*D2R,ha_point*D2R)
+            else:
+                u,v,w = get_uvw(x_length,y_length,z_length,dec_phase*D2R,ha_phase*D2R)
+        
+            #print 'Adding point sources'
+            uv_data_XX = array([0.0,0.0,1.0])
+            uv_data_YY = array([0.0,0.0,1.0])
+            
+            ##For every source in the sky
+            for name,source in sources.iteritems():
+                ##If source is below the horizon, forget about it
+                if source.skip:
+                    pass
+                ##Otherwise, proceed
+                else:
+                    if options.no_phase_tracking:
+                        phasetrack = False
+                    else:
+                        phasetrack = True
+                    model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
+                        x_length=x_length,y_length=y_length,z_length=z_length,freq_decor=freq_decor,freq=freq_cent,time_decor=time_decor,
+                        time_int=time_res,chan_width=freq_res*1e+6,beam=options.beam,phasetrack=phasetrack)
+                        
+                    write_data[baseline][5][0,0,0,0,0,:] += array([real(model_xxpol),imag(model_xxpol),0.0000])
+                    write_data[baseline][5][0,0,0,0,1,:] += array([real(model_yypol),imag(model_yypol),0.0000])
+            
+            ###Could add in crazy weightings here
+            ##uv_data_XX[2] = 1.0
+            ##uv_data_YY[2] = 1.0
+            
+
     if time_res < 1:
         uvfits_name = "%s_%.3f_%05.2f.uvfits" %(tag_name,freq,time)
     else:
