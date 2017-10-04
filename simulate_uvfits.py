@@ -272,7 +272,7 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
     #print 'srclist has been weighted by freq and beam'
     ##GSM image and uv_data_array are the same for all baselines, for each time and freq
     
-    if srclist and not options.add_to_existing:
+    if not options.add_to_existing:
         # Create uv structure by hand, probably there is a better way of doing this but the uvfits structure is kind of finicky
         n_freq = 1 # only one frequency per uvfits file as read by the RTS
         n_data = len(base_data)
@@ -284,9 +284,10 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
         baselines_array = zeros(n_data)
         date_array = zeros(n_data)
         
-        for name,source in sources.iteritems():
-            weight_by_beam(source=source,freqcent=freq_cent,LST=lst,delays=delays,beam=options.beam,fix_beam=options.fix_beam)
-        
+        if srclist:
+            for name,source in sources.iteritems():
+                weight_by_beam(source=source,freqcent=freq_cent,LST=lst,delays=delays,beam=options.beam,fix_beam=options.fix_beam)
+            
         for baseline in xrange(len(base_data)):
             #print 'Simulating baseline %04d' %baseline
         #for baseline in range(0,1):
@@ -301,23 +302,24 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
             uv_data_XX = array([0.0,0.0,1.0])
             uv_data_YY = array([0.0,0.0,1.0])
             
-            ##For every source in the sky
-            for name,source in sources.iteritems():
-                ##If source is below the horizon, forget about it
-                if source.skip:
-                    pass
-                ##Otherwise, proceed
-                else:
-                    if options.no_phase_tracking:
-                        phasetrack = False
+            if srclist:
+                ##For every source in the sky
+                for name,source in sources.iteritems():
+                    ##If source is below the horizon, forget about it
+                    if source.skip:
+                        pass
+                    ##Otherwise, proceed
                     else:
-                        phasetrack = True
-                    model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
-                        x_length=x_length,y_length=y_length,z_length=z_length,freq_decor=freq_decor,freq=freq_cent,time_decor=time_decor,
-                        time_int=time_res,chan_width=freq_res*1e+6,beam=options.beam,phasetrack=phasetrack)
-                        
-                    uv_data_XX += array([real(model_xxpol),imag(model_xxpol),0.0000])
-                    uv_data_YY += array([real(model_yypol),imag(model_yypol),0.0000])
+                        if options.no_phase_tracking:
+                            phasetrack = False
+                        else:
+                            phasetrack = True
+                        model_xxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,phase_ra=ra_phase,phase_dec=dec_phase,LST=lst,
+                            x_length=x_length,y_length=y_length,z_length=z_length,freq_decor=freq_decor,freq=freq_cent,time_decor=time_decor,
+                            time_int=time_res,chan_width=freq_res*1e+6,beam=options.beam,phasetrack=phasetrack)
+                            
+                        uv_data_XX += array([real(model_xxpol),imag(model_xxpol),0.0000])
+                        uv_data_YY += array([real(model_yypol),imag(model_yypol),0.0000])
             
             ###Could add in crazy weightings here
             ##uv_data_XX[2] = 1.0
@@ -514,6 +516,9 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
             
             if outside:
                 skipped_gsm += 1
+                if options.new_uvfits:
+                    write_data[baseline][5][0,0,0,0,0,:] = array([0,0,0.0000])
+                    write_data[baseline][5][0,0,0,0,1,:] = array([0,0,0.0000])
             else:
                 if options.beam:
                     uv_complex_XX,uv_complex_YY,this_image_XX,this_image_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
@@ -528,9 +533,14 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
                 
                 write_data[baseline][5][0,0,0,0,0,:] += array([real(uv_complex_XX),imag(uv_complex_XX),0.0000])
                 write_data[baseline][5][0,0,0,0,1,:] += array([real(uv_complex_YY),imag(uv_complex_YY),0.0000])
+                
+                #write_data[baseline][5][0,0,0,0,0,:] = array([real(uv_complex_XX),imag(uv_complex_XX),0.0000])
+                #write_data[baseline][5][0,0,0,0,1,:] = array([real(uv_complex_YY),imag(uv_complex_YY),0.0000])
+                
         print '%04d out of %04d baselines skipped in gsm, u,v point outside gsm uv data plane' %(skipped_gsm,len(base_data))
         
     if options.add_to_existing:
+        #print 'here'
         #if not options.srclist:
         write_uvfits = base_uvfits
         write_data = base_uvfits[0].data
@@ -580,7 +590,6 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
             ##uv_data_XX[2] = 1.0
             ##uv_data_YY[2] = 1.0
             
-
     if time_res < 1:
         uvfits_name = "%s_%.3f_%05.2f.uvfits" %(tag_name,freq,time)
     else:

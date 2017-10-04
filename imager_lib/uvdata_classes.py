@@ -222,6 +222,7 @@ class UVContainer(object):
         ##Have a custom error?
         self.freq_res = freq_res
         self.time_res = time_res
+        self.rts = rts
         
         times = time_start + arange(num_times) * time_res
         freqs = freq_start + arange(num_freqs) * freq_res
