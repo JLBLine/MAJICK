@@ -20,12 +20,12 @@ from jdcal import gcal2jd
 #from astropy.wcs import WCS
 #from time import time
 
-D2R = pi/180.0
-R2D = 180.0/pi
-VELC = 299792458.0
-MWA_LAT = -26.7033194444
-#MWA_LAT = 0.0
-SOLAR2SIDEREAL = 1.00274
+from os import environ
+import pickle
+
+MAJICK_DIR = environ['MAJICK_DIR']
+with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
+    D2R, R2D, VELC, MWA_LAT, KERNEL_SIZE, W_E, SOLAR2SIDEREAL = pickle.load(f)
 
 ##ephem Observer class, use this to compute LST from the date of the obs 
 MRO = Observer()
@@ -124,7 +124,7 @@ def calc_jdcal(date):
 
 
 class UVData(object):
-    def __init__(self,uvfits=None,time_res=None,rts=False,date=False):
+    def __init__(self,uvfits=None,time_res=None,rts=False,date=False,MWA_LAT=MWA_LAT):
         '''A single time and frequency step of uvdata. Includes a dictioary
         containing all telecope X,Y,Z and antenna pairs from which to calcualte
         baseline lengths'''

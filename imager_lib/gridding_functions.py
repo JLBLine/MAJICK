@@ -20,18 +20,12 @@ from mwapy import ephem_utils
 from mwapy.pb import primary_beam
 from mwapy.pb import mwa_tile
 from os import environ
+import pickle
 
 MAJICK_DIR = environ['MAJICK_DIR']
+with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
+    D2R, R2D, VELC, MWA_LAT, KERNEL_SIZE, W_E, SOLAR2SIDEREAL = pickle.load(f)
 
-D2R = pi/180.0
-R2D = 180.0/pi
-VELC = 299792458.0
-#MWA_LAT = -26.7033194444
-MWA_LAT = 0.0
-##Always set the kernel size to an odd value
-##Makes all ranges set to zero at central values
-KERNEL_SIZE = 31
-W_E = 7.292115e-5
 
 def add_kernel(uv_array,u_ind,v_ind,kernel):
     '''Takes v by u sized kernel and adds it into

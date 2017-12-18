@@ -11,15 +11,12 @@ from astropy.io import fits
 from ephem import Observer,degrees
 from os import environ
 from numpy import floor,random
-KERNELSIZE = 31
+from os import environ
+import pickle
 
 MAJICK_DIR = environ['MAJICK_DIR']
-    
-D2R = pi/180.0
-R2D = 180.0/pi
-VELC = 299792458.0
-#MWA_LAT = -26.7033194444
-MWA_LAT = 0.0
+with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
+    D2R, R2D, VELC, MWA_LAT, KERNEL_SIZE, W_E, SOLAR2SIDEREAL = pickle.load(f)
 
 def enh2xyz(east,north,height,latitiude):
     sl = sin(latitiude)
@@ -222,7 +219,7 @@ def create_uv_kernel(image_kernel=False):
     ##Do the forward FFT as we define the inverse FFT for u,v -> l,m. 
     ##Scale the output correctly for the way that numpy does it, and remove FFT shift
     #uv_kernel = fft.fft2(image_kernel) #/ (image_kernel.shape[0] * image_kernel.shape[1])
-    uv_kernel = fft.fft2(image_kernel) / (KERNELSIZE * KERNELSIZE)
+    uv_kernel = fft.fft2(image_kernel) / (KERNEL_SIZE * KERNEL_SIZE)
     uv_kernel = fft.fftshift(uv_kernel)
     
     return uv_kernel
@@ -253,20 +250,20 @@ if over_sampled:
     
     oversampling_factor = 99
     
-    oversamp_XX = zeros(((oversampling_factor)*KERNELSIZE,(oversampling_factor)*KERNELSIZE))
-    oversamp_YY = zeros(((oversampling_factor)*KERNELSIZE,(oversampling_factor)*KERNELSIZE))
+    oversamp_XX = zeros(((oversampling_factor)*KERNEL_SIZE,(oversampling_factor)*KERNEL_SIZE))
+    oversamp_YY = zeros(((oversampling_factor)*KERNEL_SIZE,(oversampling_factor)*KERNEL_SIZE))
     
-    lower = (oversampling_factor*KERNELSIZE) / 2 - (KERNELSIZE / 2)
+    lower = (oversampling_factor*KERNEL_SIZE) / 2 - (KERNEL_SIZE / 2)
     
-    oversamp_XX[lower:lower+KERNELSIZE,lower:lower+KERNELSIZE] = image_XX
-    oversamp_YY[lower:lower+KERNELSIZE,lower:lower+KERNELSIZE] = image_YY
+    oversamp_XX[lower:lower+KERNEL_SIZE,lower:lower+KERNEL_SIZE] = image_XX
+    oversamp_YY[lower:lower+KERNEL_SIZE,lower:lower+KERNEL_SIZE] = image_YY
     
     uv_kernel_XX = create_uv_kernel(image_kernel=oversamp_XX)
     uv_kernel_YY = create_uv_kernel(image_kernel=oversamp_YY)
     
     num_pixel = uv_kernel_XX.shape[0]
     
-    l_reso = 2.0 / KERNELSIZE
+    l_reso = 2.0 / KERNEL_SIZE
     
     max_u = (0.5 / l_reso)
     u_reso = (2*max_u) / float(num_pixel)
@@ -301,10 +298,8 @@ if options.diffuse_test:
     image[image_size+m_off,image_size-l_off] = 1.0
     uv_data_array_test, u_sim_test, v_sim_test, u_reso_test = convert_image_lm2uv(image=image,l_reso=l_reso_test)
     
-##Sidereal seconds per solar seconds - ie if 1s passes on
-##the clock, sky has moved by 1.00274 secs of angle
-SOLAR2SIDEREAL = 1.00274
-
+    MWA_LAT = 0.0
+    
 freq_range = freq_start + arange(num_freqs)*freq_res
 time_range = time_start + arange(num_times)*time_res
 
@@ -599,7 +594,7 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
             w = write_data[baseline][2] * freq_cent
             
             outside = False
-            half_grid_width = floor(KERNELSIZE / 2.0) * u_reso
+            half_grid_width = floor(KERNEL_SIZE / 2.0) * u_reso
             
             if u < (u_sim.min() + half_grid_width) or u > (u_sim.max() - half_grid_width): outside = True
             if v < (v_sim.min() + half_grid_width) or v > (v_sim.max() - half_grid_width): outside = True

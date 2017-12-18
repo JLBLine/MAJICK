@@ -16,12 +16,12 @@ try:
 except ImportError:
     import pyfits as fits
 from sys import exit
+import pickle
+MAJICK_DIR = environ['MAJICK_DIR']
 
-D2R = pi/180.0
-R2D = 180.0/pi
-VELC = 299792458.0
-MWA_LAT = -26.7033194444
-#MWA_LAT = 0
+with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
+    D2R, R2D, VELC, MWA_LAT, KERNEL_SIZE, W_E, SOLAR2SIDEREAL = pickle.load(f)
+    
 beam_freqs = arange(49920000,327680000+1.28e6,1.28e+6)
 
 ##RTS shapelet settings
@@ -30,7 +30,6 @@ sbf_c = 1000
 sbf_N  = 31
 sbf_dx = 0.01
 
-MAJICK_DIR = environ['MAJICK_DIR']
 MWAPY_H5PATH = MAJICK_DIR + "/telescopes/MWA_phase1/mwa_full_embedded_element_pattern.h5" 
 sbf = loadtxt('%s/imager_lib/shapelet_basis.txt' %MAJICK_DIR)
 
