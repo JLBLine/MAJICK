@@ -14,7 +14,7 @@ from cmath import phase,exp
 from sys import exit
 #from astropy.wcs import WCS
 #from time import time
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import scipy as sp
 from mwapy import ephem_utils
 from mwapy.pb import primary_beam
@@ -26,8 +26,8 @@ MAJICK_DIR = environ['MAJICK_DIR']
 D2R = pi/180.0
 R2D = 180.0/pi
 VELC = 299792458.0
-MWA_LAT = -26.7033194444
-#MWA_LAT = 0.0
+#MWA_LAT = -26.7033194444
+MWA_LAT = 0.0
 ##Always set the kernel size to an odd value
 ##Makes all ranges set to zero at central values
 KERNEL_SIZE = 31
@@ -48,8 +48,9 @@ def apply_kernel(uv_data_array=None,u_ind=None,v_ind=None,kernel=None):
     given u,v index with a given kernel. Kernel MUST be odd dimensions 
     for symmetry purposes'''
     ker_v,ker_u = kernel.shape
-    width_u = int((ker_u - 1) / 2)
-    width_v = int((ker_v - 1) / 2)
+    width_u = ker_u // 2
+    width_v = ker_v // 2
+    
     ##Just return the central data point of the kernel
     array_subsec = uv_data_array[v_ind - width_v:v_ind+width_v+1,u_ind - width_u:u_ind+width_u+1]*kernel
     
@@ -142,7 +143,7 @@ def image2kernel(image=None,cell_reso=None,u_off=0.0,v_off=0.0,l_mesh=None,m_mes
     ##the phase shift, or reverse the indicies in l_mesh, m_mesh. Or some
     ##combo of all!! J. Line 20-07-2016
     phase_shift_image =  image * np_exp(2j * pi*(u_off*cell_reso*l_mesh + v_off*cell_reso*m_mesh))
-    
+
     ##FFT shift the image ready for FFT
     phase_shift_image = fft.ifftshift(phase_shift_image)
     ##Do the forward FFT as we define the inverse FFT for u,v -> l,m. 
@@ -402,10 +403,14 @@ def wprojection(w=None,n=None):
     
     #print('w-term',np_exp(-2j*pi*(w*(n - 1))))
     #return conjugate(np_exp(-2j*pi*(w*(n - 1)))) 
-    return np_exp(-2j*pi*(w*(n - 1)))
+    return np_exp(2j*pi*(w*(n - 1)))
 
 #@profile
-def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, weights=None, kernel='none',kernel_params=None, conjugate=False,central_lst=None,time_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_cent=None,beam_image=None,delay_str="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",u_sim=None,v_sim=None,image=None,u_reso=None,freq_decor=False,freq_int=None,fix_beam=False,image_XX=False,image_YY=False,wproj=True):
+def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, weights=None, kernel='none',kernel_params=None,
+                 conjugate=False,central_lst=None,time_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_cent=None,
+                 beam_image=None,delay_str="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",u_sim=None,v_sim=None,image=None,u_reso=None,freq_decor=False,
+                 freq_int=None,fix_beam=False,image_XX=False,image_YY=False,wproj=True,phase_shift_kernel=True,
+                 uv_kernel_XX=None,uv_kernel_YY=None,u_range_kernel=None,v_range_kernel=None,over_sampled=False,over_sampling=None):
     '''A reverse gridded - takes a grid of uv data (must be square!!), and then samples the 
     u,v data at the given u,v coords, using the desired kerrnel'''
     
@@ -438,11 +443,10 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
     u,v,w = get_uvw(X,Y,Z,dec0,h0)
     
     if kernel == 'gaussian':
-        kernel_params = [1.0,1.0]
+        kernel_params = [2.0,2.0]
         sig_x,sig_y = kernel_params
         
         ##Calculate the gaussian caused in image space due to desired params of gridding gaussian in u,v
-        #image_kernel = 
         image_XX = image_gaussian(kernel_sig_x=sig_x,kernel_sig_y=sig_y,l_mesh=l_mesh,m_mesh=m_mesh,cell_reso=u_reso)
         image_YY = image_XX
         
@@ -478,21 +482,53 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
         image_XX *= image_freq
         image_YY *= image_freq
         
-    #No matter what kernel used, l,m is a flat sky and so w terms are
-    #absent. Need to account for this, so generate the w-term effects
-    #image space and add to degridding kernel
+    if over_sampled:
+        ##Find closest u,v point in the oversample kernel that matches the offset from our grid point
+        ##This will become the centre point of our 
+        u_ind_ker,v_ind_ker,u_off_ker,v_off_ker = find_closet_uv(u=u_off,v=v_off,u_range=u_range_kernel,v_range=v_range_kernel,resolution=u_range_kernel[1]-u_range_kernel[0])
         
-    if wproj:
-        wproj_image = wprojection(w=w,n=n_mesh)
-        wproj_image *= n_mask
+        u_ind_ker = int(u_ind_ker)
+        v_ind_ker = int(v_ind_ker)
+        over_sampling = int(over_sampling)
         
-        image_XX = wproj_image * image_XX.astype(complex)
-        image_YY = wproj_image * image_YY.astype(complex)
+        ##Do some maths to work out which points about the central
+        ##point u_ind_ker,v_ind_ker to sample
+        low_samp_u = u_ind_ker % over_sampling
+        low_samp_v = v_ind_ker % over_sampling
+
+        if abs(int(uv_kernel_XX.shape[0]/2) - u_ind_ker) == over_sampling:
+            low_samp_u = over_sampling - 1
+            low_samp_v = over_sampling - 1
+
+        offset_array = arange(-int(KERNEL_SIZE / 2), int(KERNEL_SIZE / 2) + 1) * over_sampling 
+        kern_mid = int(uv_kernel_XX.shape[0]/2)
+
+        offset_u = offset_array + (3*kern_mid) / 2 - u_ind_ker / 2
+        offset_v = offset_array + (3*kern_mid) / 2 - v_ind_ker / 2
+
+        ##Make a mesh grid of the coords to sample, then apply
+        ##to the kernel to get back the KERNEL_SIZE*KERNEL_SIZE kernel
+        mesh_u,mesh_v = meshgrid(offset_u.astype(int),offset_v.astype(int))
+
+        kernel_array_XX = uv_kernel_XX[mesh_v,mesh_u]
+        kernel_array_YY = uv_kernel_YY[mesh_v,mesh_u]
+        
+    ##If doing via the fourier shift kernel method
     else:
-        pass
-    
-    kernel_array_XX = image2kernel(image_XX,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
-    kernel_array_YY = image2kernel(image_YY,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
+        #No matter what kernel used, l,m is a flat sky and so w terms are
+        #absent. Need to account for this, so generate the w-term effects
+        #image space and add to degridding kernel
+        if wproj:
+            wproj_image = wprojection(w=w,n=n_mesh)
+            wproj_image *= n_mask
+            
+            image_XX = wproj_image * image_XX.astype(complex)
+            image_YY = wproj_image * image_YY.astype(complex)
+        else:
+            pass
+        
+        kernel_array_XX = image2kernel(image_XX,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
+        kernel_array_YY = image2kernel(image_YY,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
     
     ##Grab the u,v data point that you want using the given kernel
     sim_complex_XX = apply_kernel(uv_data_array=uv_data_array,u_ind=u_ind,v_ind=v_ind,kernel=kernel_array_XX)

@@ -18,8 +18,8 @@ MAJICK_DIR = environ['MAJICK_DIR']
 D2R = pi/180.0
 R2D = 180.0/pi
 VELC = 299792458.0
-MWA_LAT = -26.7033194444
-#MWA_LAT = 0.0
+#MWA_LAT = -26.7033194444
+MWA_LAT = 0.0
 
 def enh2xyz(east,north,height,latitiude):
     sl = sin(latitiude)
@@ -109,6 +109,15 @@ parser.add_option('-y', '--freq_res', default=0.04,
 parser.add_option('-z', '--freq_decor', default=False, action='store_true',
     help='Add to include freq decorrelation in the simulation')
 
+parser.add_option('--over_sampled_kernel', default=False, action='store_true',
+    help='Add to switch the kernel to the oversampled version rather than the phase shifting niceness')
+
+parser.add_option('--diffuse_test', default=False, action='store_true',
+    help='Add to make a single point source image for testing diffuse rather than use the GSM')
+
+parser.add_option('--single_baseline', default=False, action='store_true',
+    help='Add to only simulate one baseline - good for testing')
+
 options, args = parser.parse_args()
 
 freq_start = float(options.freq_start)
@@ -124,6 +133,7 @@ intial_date = options.date
 tag_name = options.tag_name
 time_decor = options.time_decor
 freq_decor = options.freq_decor
+over_sampled = options.over_sampled_kernel
 
 data_loc = options.data_loc
 
@@ -204,6 +214,92 @@ if options.diffuse:
     else:
         image_XX = False
         image_YY = False
+        
+def create_uv_kernel(image_kernel=False):
+    '''Takes a image kernel and turns into a uv kernel'''
+    ##FFT shift the image ready for FFT
+    image_kernel = fft.ifftshift(image_kernel)
+    ##Do the forward FFT as we define the inverse FFT for u,v -> l,m. 
+    ##Scale the output correctly for the way that numpy does it, and remove FFT shift
+    #uv_kernel = fft.fft2(image_kernel) #/ (image_kernel.shape[0] * image_kernel.shape[1])
+    uv_kernel = fft.fft2(image_kernel) / (KERNELSIZE * KERNELSIZE)
+    uv_kernel = fft.fftshift(uv_kernel)
+    
+    return uv_kernel
+
+##OSKAR phase tracks, but the MWA correlator doesn't, so we have to undo
+##any phase tracking done
+def rotate_phase(visibilities=None,new_wws=None):
+    '''Undoes any phase tracking applied to data - to phase track, a phase was applied
+    to counter the delay term caused by w term of baseline - so just apply the opposite
+    w term. Negative sign was decided through experiment :-S'''
+
+    ##I think this has to be negative because OSKAR has negative w when compared
+    ##to MAPS; works with the extra -w I add in later
+    sign = 1
+    PhaseConst = 1j * 2 * pi * sign
+    
+    phase_rotate = n_exp(PhaseConst * -new_wws)
+    rotated_visis *= phase_rotate
+
+
+if over_sampled:
+    #print 'Begun creating oversampled kernel'
+    delay_str="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
+    beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,options.telescope)
+    ##If using CHIPS in fix beam mode, set to 186.235MHz (+0.02 for half channel width)
+    image_XX = my_loadtxt('%s/beam_%s_186255000.000_XX.txt' %(beam_loc,delay_str))
+    image_YY = my_loadtxt('%s/beam_%s_186255000.000_YY.txt' %(beam_loc,delay_str))
+    
+    oversampling_factor = 99
+    
+    oversamp_XX = zeros(((oversampling_factor)*KERNELSIZE,(oversampling_factor)*KERNELSIZE))
+    oversamp_YY = zeros(((oversampling_factor)*KERNELSIZE,(oversampling_factor)*KERNELSIZE))
+    
+    lower = (oversampling_factor*KERNELSIZE) / 2 - (KERNELSIZE / 2)
+    
+    oversamp_XX[lower:lower+KERNELSIZE,lower:lower+KERNELSIZE] = image_XX
+    oversamp_YY[lower:lower+KERNELSIZE,lower:lower+KERNELSIZE] = image_YY
+    
+    uv_kernel_XX = create_uv_kernel(image_kernel=oversamp_XX)
+    uv_kernel_YY = create_uv_kernel(image_kernel=oversamp_YY)
+    
+    num_pixel = uv_kernel_XX.shape[0]
+    
+    l_reso = 2.0 / KERNELSIZE
+    
+    max_u = (0.5 / l_reso)
+    u_reso = (2*max_u) / float(num_pixel)
+    u_offset = -(u_reso / 2.0)
+    
+    u_range_kernel = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
+    v_range_kernel = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
+    
+    print 'Done creating oversampled kernel'
+    
+else:
+    uv_kernel_XX = None
+    uv_kernel_YY = None
+    oversampling_factor = None
+    u_range_kernel = None
+    v_range_kernel = None
+
+
+if options.diffuse_test:
+    half_width = 1.0
+    image_size = 3051
+    l_range = linspace(-half_width,half_width,2.0*image_size + 1)
+    m_range = linspace(-half_width,half_width,2.0*image_size + 1)
+    l_reso_test = (2.0*half_width) / (2.0*image_size + 1)
+    
+    l_off = int(options.l_value)
+    m_off = 0
+    
+    image = zeros((int(2.0*image_size+1),int(2.0*image_size+1)))
+    l = l_range[image_size+l_off]
+    m = m_range[image_size+m_off]
+    image[image_size+m_off,image_size-l_off] = 1.0
+    uv_data_array_test, u_sim_test, v_sim_test, u_reso_test = convert_image_lm2uv(image=image,l_reso=l_reso_test)
     
 ##Sidereal seconds per solar seconds - ie if 1s passes on
 ##the clock, sky has moved by 1.00274 secs of angle
@@ -218,11 +314,14 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
     print freq,time
     freq_cent = ((freq + freq_res / 2.0)*1e+6)
     
-    if not srclist or options.add_to_existing:
-        if time_res < 1:
-            base_uvfits = fits.open("%s_%.3f_%05.2f.uvfits" %(options.base_uvfits,freq,time))
-        else:
-            base_uvfits = fits.open("%s_%.3f_%02d.uvfits" %(options.base_uvfits,freq,int(time)))
+    if not srclist:
+        if options.add_to_existing:
+            if time_res < 1:
+                base_uvfits = fits.open("%s_%.3f_%05.2f.uvfits" %(options.base_uvfits,freq,time))
+            else:
+                base_uvfits = fits.open("%s_%.3f_%02d.uvfits" %(options.base_uvfits,freq,int(time)))
+        elif options.new_uvfits:
+            base_uvfits = fits.open("%s" %(options.base_uvfits))
 
         base_data = base_uvfits[0].data
         base_header = base_uvfits[0].header
@@ -436,57 +535,39 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
         antenna_table = write_uvfits[1].data
         antenna_header = write_uvfits[1].header
         
+    ##Add degridding visibilities
     if options.diffuse:
-        ##TODO - I think this may be half a time step off, need to give the central time
-        image, l_reso = generate_gsm_2016(freq=freq_cent,this_date=this_date,observer=MRO)
-
-        ##----TESTCODE-------------------------------------------------------------
-        ##-------------------------------------------------------------------------
-        #half_width = 1.0
-        #image_size = 3051
-        #l_range = linspace(-half_width,half_width,2.0*image_size + 1)
-        #m_range = linspace(-half_width,half_width,2.0*image_size + 1)
-        #l_reso = (2.0*half_width) / (2.0*image_size + 1)
-        
-        #l_off = int(options.l_value)
-        #m_off = 0
-        
-        #image = zeros((int(2.0*image_size+1),int(2.0*image_size+1)))
-        ##image = zeros((2.0*image_size,2.0*image_size))
-        
-        #test_srclist = open('srclist_%03d.txt' %l_off,'w+')
-        ##test_srclist_diff = open('srclist_diff_%03d.txt' %l_off,'w+')
-        
-        #l = l_range[image_size+l_off]
-        #m = m_range[image_size+m_off]
-        #image[image_size+m_off,image_size+l_off] = 1.0
-        #ra_source = lst + arcsin(l)*R2D - ((time_res / 2.0)*SOLAR2SIDEREAL*(15.0/3600.0))
-        #dec_source = MWA_LAT + arcsin(m)*R2D
-        
-        #if ra_source > 360.0: ra_source -= 360.0
-        
-        #test_srclist.write('SOURCE bleh%d%d %.5f %.5f\n' %(l_off,m_off,ra_source/15.0,dec_source))
-        #test_srclist.write('FREQ 160e+6 1.0 0 0 0\n')
-        #test_srclist.write('FREQ 180e+6 1.0 0 0 0\n')
-        #test_srclist.write('ENDSOURCE\n')
-        
-        ##test_srclist_diff.write('SOURCE bleh%d%d %.5f %.5f\n' %(l_off,m_off,(ra_source/15.0)+arcsin(l_reso),dec_source))
-        ##test_srclist_diff.write('FREQ 160e+6 1.0 0 0 0\n')
-        ##test_srclist_diff.write('FREQ 180e+6 1.0 0 0 0\n')
-        ##test_srclist_diff.write('ENDSOURCE\n')
-        
-        #test_srclist.close()
-        ##test_srclist_diff.close()
-            ##print('ra_source,dec_source',ra_source,dec_source)
+        ##If doing tests, already made image at start of options
+        if options.diffuse_test:
+            l_off = int(options.l_value)
+            m_off = 0
+            ##Figure out where the point source is so can compare to analytic
+            test_srclist = open('srclist_%03d.txt' %l_off,'w+')
             
-        ##-------------------------------------------------------------------------
-        ##----END TESTCODE---------------------------------------------------------
+            l = l_range[image_size+l_off]
+            m = m_range[image_size+m_off]
+            ra_source = lst + arcsin(l)*R2D #- ((time_res / 2.0)*SOLAR2SIDEREAL*(15.0/3600.0))
+            dec_source = MWA_LAT + arcsin(m)*R2D
         
-        uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso)
+            if ra_source > 360.0: ra_source -= 360.0
+            
+            test_srclist.write('SOURCE bleh%d%d %.5f %.5f\n' %(l_off,m_off,ra_source/15.0,dec_source))
+            test_srclist.write('FREQ 160e+6 1.0 0 0 0\n')
+            test_srclist.write('FREQ 180e+6 1.0 0 0 0\n')
+            test_srclist.write('ENDSOURCE\n')
+            test_srclist.close()
+
+            ##Need to assign these to the test values form above,
+            ##because we also declare them when not using the test option and python
+            ##throws a wobbly if we don't
+            uv_data_array, u_sim, v_sim, u_reso = uv_data_array_test, u_sim_test, v_sim_test, u_reso_test
+            l_reso = l_reso_test
         
-        ##For each baseline
-        skipped_gsm = 0
-        outside_uv = 0
+        ##Otherwise, generate a diffuse sky image using the GSM, and FT to uv-space
+        else:
+            ##TODO - I think this may be half a time step off, need to give the central time
+            image, l_reso = generate_gsm_2016(freq=freq_cent,this_date=this_date,observer=MRO)
+            uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso)
         
         if not options.srclist:
             write_uvfits = base_uvfits
@@ -495,10 +576,19 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
             antenna_table = base_uvfits[1].data
             antenna_header = base_uvfits[1].header
             
+        ##If we only want one baseline, make the range for one baseline
+        if options.single_baseline:
+            baseline_range = xrange(1)
+        else:
+            baseline_range = xrange(len(base_data))
+            
         ra0,dec0 = ra_phase*D2R,dec_phase*D2R
         phase_centre = [ra0,dec0]
+        skipped_gsm = 0
+        outside_uv = 0
         
-        for baseline in xrange(len(base_data)):
+        ##For each baseline
+        for baseline in baseline_range:
             ##Due to the resolution of the GSM not all baselines will fall on the u,v
             ##plane (u_extent = 1 / l_reso), so skip those that fail
             #try:
@@ -524,18 +614,97 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
                     uv_complex_XX,uv_complex_YY,this_image_XX,this_image_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
                         kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline],
                         phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
-                        freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=options.wproj)
+                        freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=options.wproj,
+                        uv_kernel_XX=uv_kernel_XX,uv_kernel_YY=uv_kernel_YY,u_range_kernel=u_range_kernel,v_range_kernel=v_range_kernel,over_sampled=over_sampled,over_sampling=oversampling_factor)
                 else:
                     uv_complex_XX,uv_complex_YY,this_image_XX,this_image_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
                         kernel='gaussian',freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline],
                         phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
                         freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=options.wproj)
                 
-                write_data[baseline][5][0,0,0,0,0,:] += array([real(uv_complex_XX),imag(uv_complex_XX),0.0000])
-                write_data[baseline][5][0,0,0,0,1,:] += array([real(uv_complex_YY),imag(uv_complex_YY),0.0000])
+                if options.new_uvfits:
+                    write_data[baseline][5][0,0,0,0,0,:] = array([real(uv_complex_XX),imag(uv_complex_XX),0.0000])
+                    write_data[baseline][5][0,0,0,0,1,:] = array([real(uv_complex_YY),imag(uv_complex_YY),0.0000])
+                else:
+                    write_data[baseline][5][0,0,0,0,0,:] += array([real(uv_complex_XX),imag(uv_complex_XX),0.0000])
+                    write_data[baseline][5][0,0,0,0,1,:] += array([real(uv_complex_YY),imag(uv_complex_YY),0.0000])
                 
-                #write_data[baseline][5][0,0,0,0,0,:] = array([real(uv_complex_XX),imag(uv_complex_XX),0.0000])
-                #write_data[baseline][5][0,0,0,0,1,:] = array([real(uv_complex_YY),imag(uv_complex_YY),0.0000])
+            if options.new_uvfits:
+                ###Try to copy MAPS as sensibly as possible
+                write_header['CTYPE2'] = 'COMPLEX '
+                write_header['CRVAL2'] = 1.0
+                write_header['CRPIX2'] = 1.0
+                write_header['CDELT2'] = 1.0
+
+                ##This means it's linearly polarised
+                write_header['CTYPE3'] = 'STOKES '
+                write_header['CRVAL3'] = -5.0
+                write_header['CRPIX3'] =  1.0
+                write_header['CDELT3'] = -1.0
+
+                ##Frequency information
+                write_header['CTYPE4'] = 'FREQ'
+                write_header['CRVAL4'] = freq_cent 
+                write_header['CRPIX4'] = base_uvfits[0].header['CRPIX4']
+                write_header['CDELT4'] = freq_res * 1e+6
+                
+                ##Not sure why we even have axis - something to do with CASA
+                ##making the first ever OSKAR fits file probably
+                
+                write_header['CTYPE5'] = base_uvfits[0].header['CTYPE5']
+                write_header['CRVAL5'] = base_uvfits[0].header['CRVAL5']
+                write_header['CRPIX5'] = base_uvfits[0].header['CRPIX5']
+                write_header['CDELT5'] = base_uvfits[0].header['CDELT5']
+
+                ##RA phase information
+                write_header['CTYPE6'] = base_uvfits[0].header['CTYPE6']
+                if options.no_phase_tracking:
+                    #write_header['CRVAL6'] = ra_point
+                    write_header['CRVAL6'] = intial_ra_point
+                else:
+                    write_header['CRVAL6'] = ra_phase
+                write_header['CRPIX6'] = base_uvfits[0].header['CRPIX6']
+                write_header['CDELT6'] = base_uvfits[0].header['CDELT6']
+
+                ##DEC phase information
+                write_header['CTYPE7'] = base_uvfits[0].header['CTYPE7']
+                if options.no_phase_tracking:
+                    write_header['CRVAL7'] = dec_point
+                else:
+                    write_header['CRVAL7'] = dec_phase
+                
+                
+                write_header['CRPIX7'] = base_uvfits[0].header['CRPIX7']
+                write_header['CDELT7'] = base_uvfits[0].header['CDELT7']
+
+                ## Write the parameters scaling explictly because they are omitted if default 1/0
+                write_header['PSCAL1'] = 1.0
+                write_header['PZERO1'] = 0.0
+                write_header['PSCAL2'] = 1.0
+                write_header['PZERO2'] = 0.0
+                write_header['PSCAL3'] = 1.0
+                write_header['PZERO3'] = 0.0
+                write_header['PSCAL4'] = 1.0
+                write_header['PZERO4'] = 0.0
+                write_header['PSCAL5'] = 1.0
+
+                write_header['PZERO5'] = float(int_jd)
+                write_header['OBJECT']  = 'Undefined'                                                           
+                if options.no_phase_tracking:
+                    #write_header['OBSRA']   = ra_point
+                    write_header['OBSRA']   = intial_ra_point
+                else:
+                    write_header['OBSRA']   = ra_phase
+                if options.no_phase_tracking:
+                    write_header['OBSDEC']  = dec_point
+                else:
+                    write_header['OBSDEC']  = dec_phase
+                
+                ##ANTENNA TABLE MODS======================================================================
+                antenna_header['FREQ'] = freq_cent
+                
+                ###MAJICK uses this date to set the LST
+                antenna_header['RDATE'] = this_date
                 
         print '%04d out of %04d baselines skipped in gsm, u,v point outside gsm uv data plane' %(skipped_gsm,len(base_data))
         
@@ -600,6 +769,8 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
         write_uvfits.writeto('%s/%s' %(data_loc,uvfits_name), overwrite=True)
     return
     
+##TODO - ONLY WORKS FOR CERTAIN PYTHON VERSIONS
+##DAGNABIT
 if options.multi_process:
     from multiprocessing import Pool
     from functools import partial
