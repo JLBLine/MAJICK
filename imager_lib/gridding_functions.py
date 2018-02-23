@@ -14,13 +14,14 @@ from cmath import phase,exp
 from sys import exit
 #from astropy.wcs import WCS
 #from time import time
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import scipy as sp
 from mwapy import ephem_utils
 from mwapy.pb import primary_beam
 from mwapy.pb import mwa_tile
 from os import environ
 import pickle
+from numba import jit
 
 MAJICK_DIR = environ['MAJICK_DIR']
 with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
@@ -136,7 +137,8 @@ def image2kernel(image=None,cell_reso=None,u_off=0.0,v_off=0.0,l_mesh=None,m_mes
     ##may need to either take the complex conjugate, or flip the sign in
     ##the phase shift, or reverse the indicies in l_mesh, m_mesh. Or some
     ##combo of all!! J. Line 20-07-2016
-    phase_shift_image =  image * np_exp(2j * pi*(u_off*cell_reso*l_mesh + v_off*cell_reso*m_mesh))
+    phase_shift_image =  image * np_exp(2.0j * pi*(u_off*cell_reso*l_mesh + v_off*cell_reso*m_mesh))
+    #phase_shift_image =  image * np_exp(2j * pi*(u_off*l_mesh + v_off*m_mesh))
 
     ##FFT shift the image ready for FFT
     phase_shift_image = fft.ifftshift(phase_shift_image)
@@ -147,6 +149,7 @@ def image2kernel(image=None,cell_reso=None,u_off=0.0,v_off=0.0,l_mesh=None,m_mes
     #return recovered_kernel
     return recovered_kernel
 
+@jit
 def get_lm(ra,ra0,dec,dec0):
     '''Calculate l,m for a given phase centre ra0,dec0 and sky point ra,dec
     Enter angles in radians'''
@@ -222,7 +225,8 @@ def fdecorr(u=None,v=None,w=None,l=None,m=None,n=None,chan_width=None,freq=None,
     #t_g = w/freq
     
     #return sinc(chan_width*t_g)
-
+    
+@jit(cache=True)
 def find_closet_uv(u=None,v=None,u_range=None,v_range=None,resolution=None):
     ##Find the difference between the gridded u coords and the desired u
     u_offs = np_abs(u_range - u)
@@ -255,9 +259,12 @@ def find_closet_uv(u=None,v=None,u_range=None,v_range=None,resolution=None):
     
     u_off = -(u_offs[u_ind] / resolution)
     v_off = -(v_offs[v_ind] / resolution)
+    #u_off = -(u_range[u_ind] - u)
+    #v_off = -(v_range[u_ind] - v)
     
     return u_ind,v_ind,u_off,v_off
 
+@jit(cache=True)
 def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None,complexes=None, weights=None,resolution=None, kernel='gaussian', kernel_params=None, central_lst=None,time_decor=False,freq_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_int=None,central_frequency=None):
     '''A simple(ish) gridder - defaults to gridding with a gaussian '''
     for i in xrange(len(u_coords)):
@@ -332,12 +339,12 @@ def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None
                 image_freq = 1 / image_freq
                 image_kernel *= image_freq
             
+            ##Take the image space kernel and FT to get the gridding kernel
+            kernel_array = image2kernel(image=image_kernel,cell_reso=resolution,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
+            
         else:
             kernel_array = array([[complex(1,0)]])
             
-        ##Take the image space kernel and FT to get the gridding kernel
-        kernel_array = image2kernel(image=image_kernel,cell_reso=resolution,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
-        
         ##Multiply the kernal by the complex value
         data_kernel = kernel_array * comp
         
@@ -375,11 +382,10 @@ def convert_image_lm2uv(image=None,l_reso=None):
         u_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
         v_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
         
-
         shift_image = fft.ifftshift(image)
         uv_data_array = fft.fft2(shift_image) #/ (image.shape[0] * image.shape[1])
         uv_data_array = fft.fftshift(uv_data_array)
-    
+        
     return uv_data_array,u_sim,v_sim,u_reso
 
 def my_loadtxt(image_loc):
@@ -414,14 +420,14 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
     #l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
     
     u_ind,v_ind,u_off,v_off = find_closet_uv(u=u,v=v,u_range=u_sim,v_range=v_sim,resolution=u_reso)
-    l_extent = 0.5 / u_reso
-    #l_reso = l_extent / len(u_sim)
-    #n2max = int((l_extent/2) / l_reso)
-    ###Create a meshgrid to sample over whole l,m range with default 31 samples
-    #l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
+    print('degrid plane resolution %.2f' %(u_sim[1] - u_sim[0]))
     
-    l_range = linspace(-l_extent,l_extent,KERNEL_SIZE)
-    m_range = linspace(-l_extent,l_extent,KERNEL_SIZE)
+    l_extent = 0.5 / u_reso
+    l_reso = 2.0 / KERNEL_SIZE
+    offset = l_reso / 2.0
+    
+    l_range = linspace(-l_extent+offset,l_extent-offset,KERNEL_SIZE)
+    m_range = linspace(-l_extent+offset,l_extent-offset,KERNEL_SIZE)
     l_mesh, m_mesh = meshgrid(l_range,m_range)
     
     ##Outside l**2 + m**2 = 1 is unphysical, so we get nans
@@ -527,5 +533,5 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
     ##Grab the u,v data point that you want using the given kernel
     sim_complex_XX = apply_kernel(uv_data_array=uv_data_array,u_ind=u_ind,v_ind=v_ind,kernel=kernel_array_XX)
     sim_complex_YY = apply_kernel(uv_data_array=uv_data_array,u_ind=u_ind,v_ind=v_ind,kernel=kernel_array_YY)
-        
+    
     return sim_complex_XX,sim_complex_YY,image_XX,image_YY

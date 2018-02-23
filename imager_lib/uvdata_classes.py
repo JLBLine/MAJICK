@@ -215,6 +215,9 @@ class UVData(object):
         del HDU[1].data
         HDU.close()
         
+        
+##TODO  CHANGE uv_data so that it reads in all frequency info
+        
 class UVContainer(object):
     def __init__(self,uv_tag=None,freq_start=None,num_freqs=None,freq_res=None,time_start=None,num_times=None,time_res=None,add_phase_track=False,rts=False,date=False):
         '''An array containing UVData objects in shape = (num time steps, num freq steps'''

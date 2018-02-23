@@ -115,6 +115,9 @@ parser.add_option('--diffuse_test', default=False, action='store_true',
 parser.add_option('--single_baseline', default=False, action='store_true',
     help='Add to only simulate one baseline - good for testing')
 
+parser.add_option('--oversampling_factor', default=99,
+    help='Set the oversampling factor if using an oversampled kernel')
+
 options, args = parser.parse_args()
 
 freq_start = float(options.freq_start)
@@ -131,6 +134,7 @@ tag_name = options.tag_name
 time_decor = options.time_decor
 freq_decor = options.freq_decor
 over_sampled = options.over_sampled_kernel
+oversampling_factor = int(options.oversampling_factor)
 
 data_loc = options.data_loc
 
@@ -148,6 +152,10 @@ date,time = intial_date.split('T')
 MRO.date = '/'.join(date.split('-'))+' '+time
 intial_lst = float(MRO.sidereal_time())*R2D
 intial_ra_point = float(MRO.sidereal_time())*R2D
+
+if options.diffuse_test:
+    MWA_LAT = 0
+
 dec_point = MWA_LAT
 
 #print('intial_ra_point', intial_ra_point)
@@ -248,8 +256,6 @@ if over_sampled:
     image_XX = my_loadtxt('%s/beam_%s_186255000.000_XX.txt' %(beam_loc,delay_str))
     image_YY = my_loadtxt('%s/beam_%s_186255000.000_YY.txt' %(beam_loc,delay_str))
     
-    oversampling_factor = 99
-    
     oversamp_XX = zeros(((oversampling_factor)*KERNEL_SIZE,(oversampling_factor)*KERNEL_SIZE))
     oversamp_YY = zeros(((oversampling_factor)*KERNEL_SIZE,(oversampling_factor)*KERNEL_SIZE))
     
@@ -264,6 +270,9 @@ if over_sampled:
     num_pixel = uv_kernel_XX.shape[0]
     
     l_reso = 2.0 / KERNEL_SIZE
+    n2max = 1.0 / l_reso
+    l_mesh, m_mesh = sample_image_coords(n2max=n2max,l_reso=l_reso)
+    l_reso = l_mesh[0,1] - l_mesh[0,0]
     
     max_u = (0.5 / l_reso)
     u_reso = (2*max_u) / float(num_pixel)
@@ -272,7 +281,11 @@ if over_sampled:
     u_range_kernel = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
     v_range_kernel = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
     
+    #u_range_kernel = linspace(-max_u+u_offset,max_u-u_offset,num_pixel)
+    #v_range_kernel = linspace(-max_u+u_offset,max_u-u_offset,num_pixel)
+    
     print 'Done creating oversampled kernel'
+    print 'Oversampling %d u_reso %.5f' %(oversampling_factor,u_range_kernel[1] - u_range_kernel[0])
     
 else:
     uv_kernel_XX = None
@@ -287,7 +300,8 @@ if options.diffuse_test:
     image_size = 3051
     l_range = linspace(-half_width,half_width,2.0*image_size + 1)
     m_range = linspace(-half_width,half_width,2.0*image_size + 1)
-    l_reso_test = (2.0*half_width) / (2.0*image_size + 1)
+    #l_reso_test = (2.0*half_width) / (2.0*image_size + 1)
+    l_reso_test = l_range[1] - l_range[0]
     
     l_off = int(options.l_value)
     m_off = 0
@@ -296,9 +310,15 @@ if options.diffuse_test:
     l = l_range[image_size+l_off]
     m = m_range[image_size+m_off]
     image[image_size+m_off,image_size-l_off] = 1.0
-    uv_data_array_test, u_sim_test, v_sim_test, u_reso_test = convert_image_lm2uv(image=image,l_reso=l_reso_test)
     
-    MWA_LAT = 0.0
+    IMGSIZE = image.shape[0]
+    img_oversamp = 3
+    
+    oversamp_image = zeros(((img_oversamp)*IMGSIZE,(img_oversamp)*IMGSIZE))
+    lower = (img_oversamp*IMGSIZE) / 2 - (IMGSIZE / 2)
+    oversamp_image[lower:lower+IMGSIZE,lower:lower+IMGSIZE] = image
+    
+    uv_data_array_test, u_sim_test, v_sim_test, u_reso_test = convert_image_lm2uv(image=oversamp_image,l_reso=l_reso_test)
     
 freq_range = freq_start + arange(num_freqs)*freq_res
 time_range = time_start + arange(num_times)*time_res
@@ -380,11 +400,14 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
         
         if srclist:
             for name,source in sources.iteritems():
-                weight_by_beam(source=source,freqcent=freq_cent,LST=lst,delays=delays,beam=options.beam,fix_beam=options.fix_beam)
-            
-        for baseline in xrange(len(base_data)):
-            #print 'Simulating baseline %04d' %baseline
-        #for baseline in range(0,1):
+                weight_by_beam(source=source,freqcent=freq_cent,LST=lst,delays=delays,beam=options.beam,fix_beam=options.fix_beam,MWA_LAT=MWA_LAT)
+        
+        if options.single_baseline:
+            baselines = xrange(1)
+        else:
+            baselines = xrange(len(base_data))
+    
+        for baseline in baselines:
             x_length,y_length,z_length = xyz_lengths[baseline]
             ##The old way of non-phase tracking
             if options.no_phase_tracking:
@@ -543,7 +566,7 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
             m = m_range[image_size+m_off]
             ra_source = lst + arcsin(l)*R2D #- ((time_res / 2.0)*SOLAR2SIDEREAL*(15.0/3600.0))
             dec_source = MWA_LAT + arcsin(m)*R2D
-        
+            print 'l offset %d is %.2f deg off zenith' %(l,arcsin(l)*R2D)
             if ra_source > 360.0: ra_source -= 360.0
             
             test_srclist.write('SOURCE bleh%d%d %.5f %.5f\n' %(l_off,m_off,ra_source/15.0,dec_source))
@@ -592,6 +615,8 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
             u = write_data[baseline][0] * freq_cent
             v = write_data[baseline][1] * freq_cent
             w = write_data[baseline][2] * freq_cent
+            
+            print 'u,v is',u,v
             
             outside = False
             half_grid_width = floor(KERNEL_SIZE / 2.0) * u_reso
@@ -701,7 +726,7 @@ def this_main(antenna_table,base_data,base_uvfits,all_args):
                 ###MAJICK uses this date to set the LST
                 antenna_header['RDATE'] = this_date
                 
-        print '%04d out of %04d baselines skipped in gsm, u,v point outside gsm uv data plane' %(skipped_gsm,len(base_data))
+        #print '%04d out of %04d baselines skipped in gsm, u,v point outside gsm uv data plane' %(skipped_gsm,len(base_data))
         
     if options.add_to_existing:
         #print 'here'
@@ -786,3 +811,4 @@ else:
     for time in time_range:
         for freq in freq_range:
             this_main(antenna_table,base_data,base_uvfits,(time,freq))
+            print '----------------------------------'

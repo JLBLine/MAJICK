@@ -17,6 +17,7 @@ except ImportError:
     import pyfits as fits
 from sys import exit
 import pickle
+from numba import jit
 MAJICK_DIR = environ['MAJICK_DIR']
 
 with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
@@ -33,24 +34,6 @@ sbf_dx = 0.01
 MWAPY_H5PATH = MAJICK_DIR + "/telescopes/MWA_phase1/mwa_full_embedded_element_pattern.h5" 
 sbf = loadtxt('%s/imager_lib/shapelet_basis.txt' %MAJICK_DIR)
 
-##Class to store calibrator source information with - set to lists
-##to store component info in the same place
-class Cali_source():
-    def __init__(self):
-        self.name = ''
-        self.types = []
-        self.ras = []
-        self.has = []
-        self.decs = []
-        self.freqs = []
-        self.fluxs = []
-        self.extrap_fluxs = []
-        self.weighted_fluxs = None
-        self.component_infos = []
-        self.XX_beam = []
-        self.YY_beam = []
-        self.skip = False
-        
 class Component_Info():
     def __init__(self):
         self.comp_type = None
@@ -176,10 +159,21 @@ def create_calibrator(cali_info=None):
             
     return source
 
-def local_beam(za, az, freq, delays=None, zenithnorm=True, power=True, jones=False, interp=True, pixels_per_deg=5):
+#@profile
+def local_beam(za=None, az=None, freq=None, delays=None, zenithnorm=True, power=True, jones=False, interp=False, pixels_per_deg=5,tile=False,mybeam=False,amps=ones((2,16))):
     '''Code pulled my mwapy that generates the MWA beam response - removes unecessary extra code from mwapy/pb'''
-    tile=beam_full_EE.ApertureArray(MWAPY_H5PATH,freq)
-    mybeam=beam_full_EE.Beam(tile, delays)
+    ##If we haven't set up the tile and beam, do so
+    if tile:
+        pass
+    else:
+        tile=beam_full_EE.ApertureArray(MWAPY_H5PATH,freq)
+        
+    if mybeam:
+        pass
+    else:
+        mybeam=beam_full_EE.Beam(tile, delays, amps=amps)
+        
+    ##Get the jones matrix for the sky positions
     if interp:
         j=mybeam.get_interp_response(az, za, pixels_per_deg)
     else:
@@ -201,104 +195,167 @@ def local_beam(za, az, freq, delays=None, zenithnorm=True, power=True, jones=Fal
         
     #Use mwa_tile makeUnpolInstrumentalResponse because we have swapped axes
     vis = mwa_tile.makeUnpolInstrumentalResponse(j,j)
+    
+    ##Ok so the vis below the last two axis contain the jones
+    ##matrix I believe
+    ##Return all 4 cross pols (XX,XY,YX,XX) = (0,0), (0,1), (1,0), (1,1)
     if not power:
-        return (sqrt(vis[:,:,0,0].real),sqrt(vis[:,:,1,1].real))
+        return sqrt(vis[:,:,0,0].real)[0][:],sqrt(vis[:,:,0,1].real)[0][:],sqrt(vis[:,:,1,0].real)[0][:],sqrt(vis[:,:,1,1].real)[0][:]
     else:
-        return (vis[:,:,0,0].real,vis[:,:,1,1].real)
+        return vis[:,:,0,0].real[0][:],vis[:,:,0,1].real[0][:],vis[:,:,1,0].real[0][:],vis[:,:,1,1].real[0][:]
 
-def weight_by_beam(source=None,freqcent=None,LST=None,delays=None,beam=False,fix_beam=False):
+def interpolate_beam(sample_freq=None,delays=None,za=None,az=None,amps=ones((2,16)),interp_freqs=None):
+    '''The beam only has a spectral resolution of 1.28MHz. The known beam
+    model frequencies are defined as beam_freqs at top of file. Find the
+    beam points within 2 course bands above and below, interpolate over 
+    them, and then find out the beam value at the desired frequencies for
+    any number of sky positions'''
+    
+    lower_freq = sample_freq - 3*1.28e+6
+    upper_freq = sample_freq + 3*1.28e+6
+    
+    pos_lowest = argmin(np_abs(beam_freqs - lower_freq))
+    pos_highest = argmin(np_abs(beam_freqs - upper_freq))
+    
+    sample_freqs = beam_freqs[pos_lowest:pos_highest+1]
+    
+    ##Setup an empty array to contain the calculated beam values
+    ##that we wish to interpolate over
+    calc_beam_points_XX = zeros((len(sample_freqs),len(za)))
+    calc_beam_points_XY = zeros((len(sample_freqs),len(za)))
+    calc_beam_points_YX = zeros((len(sample_freqs),len(za)))
+    calc_beam_points_YY = zeros((len(sample_freqs),len(za)))
+    
+    ##Calculate the beam for each of the frequencies we are sampling
+    ##the beam at, for all az,za. Stick em in a 2D array shape = freq,sky_pos
+    for freq_ind,freq in enumerate(sample_freqs):
+        
+        tile = beam_full_EE.ApertureArray(MWAPY_H5PATH,freq)
+        mybeam = beam_full_EE.Beam(tile, delays, amps=amps)
+        
+        XX,XY,YX,YY = local_beam(za=[za], az=[az], freq=freq, delays=delays, tile=tile, mybeam=mybeam)
+
+        calc_beam_points_XX[freq_ind,:] = XX
+        calc_beam_points_XY[freq_ind,:] = XY
+        calc_beam_points_YX[freq_ind,:] = YX
+        calc_beam_points_YY[freq_ind,:] = YY
+        
+    
+    ##Setup an empty array to contain the interpolated
+    ##beam values for all the desired frequencies
+    interp_beam_points_XX = zeros((len(interp_freqs),len(za)))
+    interp_beam_points_XY = zeros((len(interp_freqs),len(za)))
+    interp_beam_points_YX = zeros((len(interp_freqs),len(za)))
+    interp_beam_points_YY = zeros((len(interp_freqs),len(za)))
+    
+    ##For each sky position, pull together the beam values
+    ##at the sampled frequecies. Create an interpolation function
+    ##for them
+    for sky_index in arange(len(za)):
+        ##do interpolation over all pols and sampled frequencies
+        f_XX = interpolate.interp1d(sample_freqs,calc_beam_points_XX[:,sky_index],kind='cubic')
+        f_XY = interpolate.interp1d(sample_freqs,calc_beam_points_XY[:,sky_index],kind='cubic')
+        f_YX = interpolate.interp1d(sample_freqs,calc_beam_points_YX[:,sky_index],kind='cubic')
+        f_YY = interpolate.interp1d(sample_freqs,calc_beam_points_YY[:,sky_index],kind='cubic')
+        
+        ##use interpolation to get beam response at desired frequecies
+        interp_beam_points_XX[:,sky_index] = f_XX(interp_freqs)
+        interp_beam_points_XY[:,sky_index] = f_XY(interp_freqs)
+        interp_beam_points_YX[:,sky_index] = f_YX(interp_freqs)
+        interp_beam_points_YY[:,sky_index] = f_YY(interp_freqs)
+    
+    return interp_beam_points_XX,interp_beam_points_XY,interp_beam_points_YX,interp_beam_points_YY
+
+##Class to store calibrator source information with - set to lists
+##to store component info in the same place
+class Cali_source():
+    def __init__(self):
+        self.name = ''
+        self.types = []
+        self.ras = []
+        self.has = []
+        self.decs = []
+        self.freqs = []
+        self.fluxs = []
+        self.extrap_fluxs = []
+        #self.weighted_fluxs = None
+        self.component_infos = []
+        self.XX_beams = []
+        self.XY_beams = []
+        self.YX_beams = []
+        self.YY_beams = []
+        self.skip = []
+        self.beam_indexes = []
+
+
+def extrapolate_and_cal_beam(sources=None,initial_lst=None,delays=None,beam=True,fix_beam=False,
+        MWA_LAT=MWA_LAT,time_range=None,time_res=None,sim_freqs=None,freqcent=None):
     '''Takes a Cali_source() class and extrapolates to the given
     frequency, then weights by the beam'''
     
-    beam_weights = []
+    beam_has = []
+    beam_decs = []
     
-    ##Check if the primary RA,Dec is below the horizon - don't calibrate on
-    ##these sources
-    ha_prim = LST - source.ras[0]
-    Az_prim,Alt_prim = ephem_utils.eq2horz(ha_prim,source.decs[0],MWA_LAT)
-    if Alt_prim < 0.0:
-        source.skip = True
-        #print('WHY ARE YOU HERE??',LST,source.ras[0],ha_prim)
-    else:
-        source.skip = False
-        extrap_fluxs = []
-        ##For each set of source infomation, calculate and extrapolated flux at the central flux value
-        for freqs,fluxs in zip(source.freqs,source.fluxs):
-            
-            ##If only one freq, extrap with an SI of -0.8:
-            if len(freqs)==1:
-                ##f1 = c*v1**-0.8
-                ##c = f1 / (v1**-0.8)
-                c = fluxs[0] / (freqs[0]**-0.8)
-                ext_flux = c*freqcent**-0.8
-            ##If extrapolating below known freqs, choose two lowest frequencies
-            elif min(freqs)>freqcent:
-                ext_flux = extrap_flux([freqs[0],freqs[1]],[fluxs[0],fluxs[1]],freqcent)
-            ##If extrapolating above known freqs, choose two highest frequencies
-            elif max(freqs)<freqcent:
-                ext_flux = extrap_flux([freqs[-2],freqs[-1]],[fluxs[-2],fluxs[-1]],freqcent)
-            ##Otherwise, choose the two frequencies above and below, and extrap between them
-            else:
-                for i in xrange(len(freqs)-1):
-                    if freqs[i]<freqcent and freqs[i+1]>freqcent:
-                        ext_flux = extrap_flux([freqs[i],freqs[i+1]],[fluxs[i],fluxs[i+1]],freqcent)
-            extrap_fluxs.append(ext_flux)
-            
-        source.extrap_fluxs = extrap_fluxs
+    ##Collect all of the ha,dec points that we need to calculate
+    ##the beam at
+    beam_index = 0
+    for time_ind,time in enumerate(time_range):
+        ##Convert the time offset into a sky offset in degrees
+        ##Add in half a time resolution step to give the central LST
+        sky_offset = (((time + (time_res / 2.0))*SOLAR2SIDEREAL)*(15.0/3600.0))
         
-        if beam:
-            final_XXs = []
-            final_YYs = []
+        ##Currently always point to zenith
+        #ra_point = intial_ra_point + sky_offset
+        #if ra_point >=360.0: ra_point -= 360.0
+        lst = initial_lst + sky_offset
+        if lst >=360.0: lst -= 360.0
+        
+        for name,source in sources.iteritems():
+            ha_prim = lst - source.ras[0]
+            Az_prim,Alt_prim = ephem_utils.eq2horz(ha_prim,source.decs[0],MWA_LAT)
+            if Alt_prim < 0.0:
+                source.skip.append(True)
+            else:
+                source.skip.append(False)
+                for ra,dec in zip(source.ras,source.decs):
+                    ha = lst - ra
+                    beam_has.append(ha)
+                    beam_decs.append(dec)
+                    source.beam_indexes.append(beam_index)
+                    beam_index += 1
+                    
+                ##Extrapolate the flux of each comoponant
             
-            ##For each component, work out it's position, convolve with the beam and sum for the source
-            for ra,dec in zip(source.ras,source.decs):
-                ##HA=LST-RA in def of ephem_utils.py
-                ha = LST - ra
-                ##Convert to zenith angle, azmuth in rad
-                Az,Alt=ephem_utils.eq2horz(ha,dec,MWA_LAT)
-                za=(90-Alt)*pi/180
-                az=Az*pi/180
-                
-                if fix_beam:
-                    ##If using CHIPS in fix_beam mode, force beam to 186.235MHz
-                    #XX,YY = primary_beam.MWA_Tile_full_EE([[za]], [[az]], freq=186.235e+6, delays=delays, zenithnorm=True, power=True, interp=False)
-                    XX,YY = local_beam([[za]], [[az]], freq=186.235e+6, delays=delays, zenithnorm=True, power=True, interp=False)
-                    
-                    final_XX,final_YY = XX[0][0],YY[0][0]
-                else:
-                    ##The beam only has a spectral resolution of 1.28MHz. The known beam
-                    ##model frequencies are defined as beam_freqs at top of file. Find the
-                    ##beam points within 2 course bands above and below, interpolate over 
-                    ##them, and then find out the beam value at the desired frequency
-                    lower_freq = freqcent - 3*1.28e+6
-                    upper_freq = freqcent + 3*1.28e+6
-                    
-                    pos_lowest = argmin(np_abs(beam_freqs - lower_freq))
-                    pos_highest = argmin(np_abs(beam_freqs - upper_freq))
-                    
-                    freqs = beam_freqs[pos_lowest:pos_highest+1]
-                    
-                    this_XX = []
-                    this_YY = []
-                    
-                    for freq in freqs:
-                        #XX,YY = primary_beam.MWA_Tile_full_EE([[za]], [[az]], freq=freq, delays=delays, zenithnorm=True, power=True, interp=False)
-                        XX,YY = local_beam([[za]], [[az]], freq=186.235e+6, delays=delays, zenithnorm=True, power=True, interp=False)
-                        this_XX.append(XX[0][0])
-                        this_YY.append(YY[0][0])
-                    
-                    ##interpolate over all XX,YY
-                    f_XX = interpolate.interp1d(freqs,this_XX,kind='cubic')
-                    f_YY = interpolate.interp1d(freqs,this_YY,kind='cubic')
-                    final_XX = f_XX(freqcent)
-                    final_YY = f_YY(freqcent)
-                    
-                    final_XXs.append(final_XX)
-                    final_YYs.append(final_YY)
-                
-            source.XX_beam = final_XXs
-            source.YY_beam = final_YYs
-                
+    
+    ##Convert the sky positions into MWA beam format
+    Az,Alt = ephem_utils.eq2horz(array(beam_has),array(beam_decs),MWA_LAT)
+    za = (90.0 - Alt) *D2R
+    az = Az * D2R
+    
+    ##Calculate the beam for all pols, desired frequencies and sky positions (yowza)
+    
+    if fix_beam:
+        ##If using CHIPS in fix_beam mode, force beam to 186.255MHz
+        sample_freq = 186.255e+6
+    else:
+        sample_freq = freqcent
+    
+    interp_beam_points_XX,interp_beam_points_XY,interp_beam_points_YX,interp_beam_points_YY = interpolate_beam(sample_freq=sample_freq,
+            delays=delays,za=za,az=az,interp_freqs=sim_freqs)
+    
+    ##TODO - get beam goodness into the source class
+        
+    ##Populate the calibrators with the correct beam values, for all sim freqs
+    for name,source in sources.iteritems():
+        ##For each component
+        for component_index in xrange(len(source.ras)):
+            source.XX_beams.append(interp_beam_points_XX[:,source.beam_indexes[component_index]])
+            source.XY_beams.append(interp_beam_points_XY[:,source.beam_indexes[component_index]])
+            source.YX_beams.append(interp_beam_points_YX[:,source.beam_indexes[component_index]])
+            source.YY_beams.append(interp_beam_points_YY[:,source.beam_indexes[component_index]])
+
+#@profile
+#@jit
 def calc_visi_envelope(pa=None,major=None,minor=None,shapelet_coeffs=None,comp_type=None,u_s=None,v_s=None):
 
     sinpa = sin(pa)
@@ -386,38 +443,63 @@ def calc_visi_envelope(pa=None,major=None,minor=None,shapelet_coeffs=None,comp_t
         exit(0)
     
     return V_envelope
-        
-def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,
-        phase_dec=None,LST=None,x_length=None,y_length=None,z_length=None,
-        time_decor=False,freq_decor=False,beam=False,freq=None,time_int=None,
-        chan_width=None,fix_beam=False,phasetrack=True):   ##,sources=None
+
+#@profile
+def model_vis(u=None,v=None,w=None,source=None,coord_centre_ra=None,
+                            coord_centre_dec=None,freqcent=None,LST=None,x_length=None,y_length=None,z_length=None,
+        time_decor=False,freq_decor=False,beam=False,freq=None,time_res=None,
+        chan_width=None,fix_beam=False,phasetrack=True,freq_chan_index=None):   ##,sources=None
     '''Generates model visibilities for a phase tracking correlator'''
     # V(u,v) = integral(I(l,m)*exp(i*2*pi*(ul+vm)) dl dm)
     vis_XX = complex(0,0)
+    vis_XY = complex(0,0)
+    vis_YX = complex(0,0)
     vis_YY = complex(0,0)
+    
     sign = 1
     PhaseConst = 1j * 2 * pi * sign
-    phase_ra *= D2R
-    phase_dec *= D2R
+    coord_centre_ra *= D2R
+    coord_centre_dec *= D2R
     ##For each component in the source
     for i in xrange(len(source.ras)):
         
-        ra,dec,flux = source.ras[i],source.decs[i],source.extrap_fluxs[i]
-        phase_ha = LST*D2R - phase_ra
+        ra,dec = source.ras[i],source.decs[i]
+        phase_ha = LST*D2R - coord_centre_ra
         ha = (LST - ra)*D2R
+        #print(source.freqs,source.fluxs)
+        ##Extrapolate component flux to desired frequency
+        freqs,fluxs = source.freqs[i],source.fluxs[i]
+        ##If only one freq, extrap with an SI of -0.8:
+        if len(freqs)==1:
+            ##f1 = c*v1**-0.8
+            ##c = f1 / (v1**-0.8)
+            c = fluxs[0] / (freqs[0]**-0.8)
+            ext_flux = c*freqcent**-0.8
+        ##If extrapolating below known freqs, choose two lowest frequencies
+        elif min(freqs)>freqcent:
+            ext_flux = extrap_flux([freqs[0],freqs[1]],[fluxs[0],fluxs[1]],freqcent)
+        ##If extrapolating above known freqs, choose two highest frequencies
+        elif max(freqs)<freqcent:
+            ext_flux = extrap_flux([freqs[-2],freqs[-1]],[fluxs[-2],fluxs[-1]],freqcent)
+        ##Otherwise, choose the two frequencies above and below, and extrap between them
+        else:
+            for i in xrange(len(freqs)-1):
+                if freqs[i]<freqcent and freqs[i+1]>freqcent:
+                    ext_flux = extrap_flux([freqs[i],freqs[i+1]],[fluxs[i],fluxs[i+1]],freqcent)
         
         ##TODO - l,m,n should be constant if phasetracking - pull out of loop somehow?
-        l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
+        l,m,n = get_lm(ra*D2R, coord_centre_ra, dec*D2R, coord_centre_dec)
         if phasetrack:
-            this_vis = flux * exp(PhaseConst*(u*l + v*m + w*(n-1)))
+            this_vis = ext_flux * exp(PhaseConst*(u*l + v*m + w*(n-1)))
+            #this_vis = ext_flux * exp(PhaseConst*(u*l + v*m))
         else:
-            this_vis = flux * exp(PhaseConst*(u*l + v*m + w*n))
+            this_vis = ext_flux * exp(PhaseConst*(u*l + v*m + w*n))
         ##Add in decor if asked for
         if time_decor:
             if phasetrack:
-                tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=phase_dec,h0=phase_ha,l=l,m=m,n=n,time_int=time_int)
+                tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=phase_dec,h0=phase_ha,l=l,m=m,n=n,time_int=time_res)
             else:
-                tdecor = tdecorr_nophasetrack(X=x_length,Y=y_length,dec_s=dec*D2R,ha_s=ha,t=time_int)
+                tdecor = tdecorr_nophasetrack(X=x_length,Y=y_length,dec_s=dec*D2R,ha_s=ha,t=time_res)
             this_vis *= tdecor
             
         ##Add in decor if asked for
@@ -442,14 +524,18 @@ def model_vis(u=None,v=None,w=None,source=None,phase_ra=None,
             this_vis *= visi_envelope
             
         if beam:
-            vis_XX += (this_vis * source.XX_beam[i])
-            vis_YY += (this_vis * source.YY_beam[i])
+            vis_XX += (this_vis * source.XX_beams[i][freq_chan_index])
+            vis_XY += (this_vis * source.XY_beams[i][freq_chan_index])
+            vis_YX += (this_vis * source.YX_beams[i][freq_chan_index])
+            vis_YY += (this_vis * source.YY_beams[i][freq_chan_index])
 
         else:
             vis_XX += this_vis
+            vis_XY += this_vis
+            vis_YX += this_vis
             vis_YY += this_vis
             
-    return vis_XX,vis_YY
+    return vis_XX,vis_XY,vis_YX,vis_YY
 
 def apply_gains(model,gains):
     '''Takes model visibilities and gains and applies the gains (multiples by) to the model'''
