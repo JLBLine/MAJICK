@@ -333,26 +333,26 @@ def extrapolate_and_cal_beam(sources=None,initial_lst=None,delays=None,beam=True
     az = Az * D2R
     
     ##Calculate the beam for all pols, desired frequencies and sky positions (yowza)
-    
-    if fix_beam:
-        ##If using CHIPS in fix_beam mode, force beam to 186.255MHz
-        sample_freq = 186.255e+6
-    else:
-        sample_freq = freqcent
-    
-    interp_beam_points_XX,interp_beam_points_XY,interp_beam_points_YX,interp_beam_points_YY = interpolate_beam(sample_freq=sample_freq,
-            delays=delays,za=za,az=az,interp_freqs=sim_freqs)
-    
-    ##TODO - get beam goodness into the source class
+    if beam:
+        if fix_beam:
+            ##If using CHIPS in fix_beam mode, force beam to 186.255MHz
+            sample_freq = 186.255e+6
+        else:
+            sample_freq = freqcent
         
-    ##Populate the calibrators with the correct beam values, for all sim freqs
-    for name,source in sources.iteritems():
-        ##For each component
-        for component_index in xrange(len(source.ras)):
-            source.XX_beams.append(interp_beam_points_XX[:,source.beam_indexes[component_index]])
-            source.XY_beams.append(interp_beam_points_XY[:,source.beam_indexes[component_index]])
-            source.YX_beams.append(interp_beam_points_YX[:,source.beam_indexes[component_index]])
-            source.YY_beams.append(interp_beam_points_YY[:,source.beam_indexes[component_index]])
+        interp_beam_points_XX,interp_beam_points_XY,interp_beam_points_YX,interp_beam_points_YY = interpolate_beam(sample_freq=sample_freq,
+                delays=delays,za=za,az=az,interp_freqs=sim_freqs)
+        
+        ##TODO - get beam goodness into the source class
+            
+        ##Populate the calibrators with the correct beam values, for all sim freqs
+        for name,source in sources.iteritems():
+            ##For each component
+            for component_index in xrange(len(source.ras)):
+                source.XX_beams.append(interp_beam_points_XX[:,source.beam_indexes[component_index]])
+                source.XY_beams.append(interp_beam_points_XY[:,source.beam_indexes[component_index]])
+                source.YX_beams.append(interp_beam_points_YX[:,source.beam_indexes[component_index]])
+                source.YY_beams.append(interp_beam_points_YY[:,source.beam_indexes[component_index]])
 
 #@profile
 #@jit
@@ -445,7 +445,7 @@ def calc_visi_envelope(pa=None,major=None,minor=None,shapelet_coeffs=None,comp_t
     return V_envelope
 
 #@profile
-def model_vis(u=None,v=None,w=None,source=None,coord_centre_ra=None,
+def model_vis(u=None,v=None,w=None,source=None,coord_centre_ra=None,coord_centre_ha=None,
                             coord_centre_dec=None,freqcent=None,LST=None,x_length=None,y_length=None,z_length=None,
         time_decor=False,freq_decor=False,beam=False,freq=None,time_res=None,
         chan_width=None,fix_beam=False,phasetrack=True,freq_chan_index=None):   ##,sources=None
@@ -458,15 +458,12 @@ def model_vis(u=None,v=None,w=None,source=None,coord_centre_ra=None,
     
     sign = 1
     PhaseConst = 1j * 2 * pi * sign
-    coord_centre_ra *= D2R
-    coord_centre_dec *= D2R
+
     ##For each component in the source
     for i in xrange(len(source.ras)):
-        
         ra,dec = source.ras[i],source.decs[i]
-        phase_ha = LST*D2R - coord_centre_ra
-        ha = (LST - ra)*D2R
-        #print(source.freqs,source.fluxs)
+        ha = LST - ra
+
         ##Extrapolate component flux to desired frequency
         freqs,fluxs = source.freqs[i],source.fluxs[i]
         ##If only one freq, extrap with an SI of -0.8:
@@ -488,18 +485,18 @@ def model_vis(u=None,v=None,w=None,source=None,coord_centre_ra=None,
                     ext_flux = extrap_flux([freqs[i],freqs[i+1]],[fluxs[i],fluxs[i+1]],freqcent)
         
         ##TODO - l,m,n should be constant if phasetracking - pull out of loop somehow?
-        l,m,n = get_lm(ra*D2R, coord_centre_ra, dec*D2R, coord_centre_dec)
+        l,m,n = get_lm(ra*D2R, coord_centre_ra*D2R, dec*D2R, coord_centre_dec*D2R)
         if phasetrack:
             this_vis = ext_flux * exp(PhaseConst*(u*l + v*m + w*(n-1)))
-            #this_vis = ext_flux * exp(PhaseConst*(u*l + v*m))
         else:
             this_vis = ext_flux * exp(PhaseConst*(u*l + v*m + w*n))
+
         ##Add in decor if asked for
         if time_decor:
             if phasetrack:
-                tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=phase_dec,h0=phase_ha,l=l,m=m,n=n,time_int=time_res)
+                tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=coord_centre_dec*D2R,h0=coord_centre_ha*D2R,l=l,m=m,n=n,time_int=time_res)
             else:
-                tdecor = tdecorr_nophasetrack(X=x_length,Y=y_length,dec_s=dec*D2R,ha_s=ha,t=time_res)
+                tdecor = tdecorr_nophasetrack(X=x_length,Y=y_length,dec_s=dec*D2R,ha_s=ha*D2R,t=time_res)
             this_vis *= tdecor
             
         ##Add in decor if asked for
