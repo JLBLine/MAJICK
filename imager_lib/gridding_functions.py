@@ -7,7 +7,7 @@ from __future__ import absolute_import
 from uvdata_classes import *
 #from astropy.io import fits
 #from ephem import Observer,degrees
-from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,linspace,sinc,repeat,reshape,loadtxt,nan_to_num,ones,conjugate
+from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,linspace,sinc,repeat,reshape,loadtxt,nan_to_num,ones,conjugate,complex128
 from numpy import abs as np_abs
 from numpy import exp as np_exp
 from cmath import phase,exp
@@ -226,7 +226,7 @@ def fdecorr(u=None,v=None,w=None,l=None,m=None,n=None,chan_width=None,freq=None,
     
     #return sinc(chan_width*t_g)
     
-@jit(cache=True)
+#@jit(cache=True)
 def find_closet_uv(u=None,v=None,u_range=None,v_range=None,resolution=None):
     ##Find the difference between the gridded u coords and the desired u
     u_offs = np_abs(u_range - u)
@@ -264,7 +264,8 @@ def find_closet_uv(u=None,v=None,u_range=None,v_range=None,resolution=None):
     
     return u_ind,v_ind,u_off,v_off
 
-@jit(cache=True)
+#from sys import exit
+#@jit(cache=True)
 def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None,complexes=None, weights=None,resolution=None, kernel='gaussian', kernel_params=None, central_lst=None,time_decor=False,freq_decor=False,xyz_lengths=None,phase_centre=None,time_int=None,freq_int=None,central_frequency=None):
     '''A simple(ish) gridder - defaults to gridding with a gaussian '''
     for i in xrange(len(u_coords)):
@@ -353,6 +354,12 @@ def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None
         
     return container
 
+from pyfft.cuda import Plan
+import pycuda.driver as cuda
+from pycuda.tools import make_default_context
+import pycuda.gpuarray as gpuarray
+from numpy import complex64
+
 def convert_image_lm2uv(image=None,l_reso=None):
     '''Takes an l,m projected all sky and ffts to give a u,v plane from which
     to (re)grid from'''
@@ -368,10 +375,28 @@ def convert_image_lm2uv(image=None,l_reso=None):
         v_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel) - u_reso/2.0
         
         shift_image = fft.fftshift(image)
-        uv_data_array = fft.fft2(shift_image) #/ (image.shape[0] * image.shape[1])
+        #uv_data_array = fft.fft2(shift_image) #/ (image.shape[0] * image.shape[1])
+        #print('typeCPU',uv_data_array.dtype)
+        
+        ##GPU CODE-------------------------------------
+        cuda.init()
+        context = make_default_context()
+        stream = cuda.Stream()
+
+        plan = Plan(shift_image.shape, stream=stream)
+
+        gpu_data = gpuarray.to_gpu(shift_image.astype(complex64))
+
+        plan.execute(gpu_data)
+        uv_data_array = gpu_data.get()
+        context.pop()
+        ##GPU CODE-------------------------------------
+        print('typeGPU',uv_data_array.dtype)
+        
         uv_data_array = fft.ifftshift(uv_data_array)
         
         u_mesh, v_mesh = meshgrid(u_sim,v_sim)
+        print('type_mesh',u_mesh.dtype)
         
         ##As an even data array has l,m = 0,0 outside of a pixel, need to shift centre
         ##of the image to account for this. An offset in l,m space is a phase change in u,v
@@ -420,7 +445,7 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
     #l,m,n = get_lm(ra*D2R, phase_ra, dec*D2R, phase_dec)
     
     u_ind,v_ind,u_off,v_off = find_closet_uv(u=u,v=v,u_range=u_sim,v_range=v_sim,resolution=u_reso)
-    print('degrid plane resolution %.2f' %(u_sim[1] - u_sim[0]))
+    #print('degrid plane resolution %.2f' %(u_sim[1] - u_sim[0]))
     
     l_extent = 0.5 / u_reso
     l_reso = 2.0 / KERNEL_SIZE
@@ -465,8 +490,8 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
         print("You haven't entered a correct degridding kernel option")
         
     if time_decor:
-        #image_time = (tdecorr_phasetrack(X=X,Y=Y,Z=Z,d0=dec0,h0=h0,l=l_mesh,m=m_mesh,n=n_mesh,time_int=time_int))
-        image_time = (tdecorr_phasetrack(X=X,Y=Y,Z=Z,d0=dec0,h0=15.0*D2R,l=l_mesh,m=m_mesh,n=n_mesh,time_int=time_int))
+        image_time = (tdecorr_phasetrack(X=X,Y=Y,Z=Z,d0=dec0,h0=h0,l=l_mesh,m=m_mesh,n=n_mesh,time_int=time_int))
+        #image_time = (tdecorr_phasetrack(X=X,Y=Y,Z=Z,d0=dec0,h0=15.0*D2R,l=l_mesh,m=m_mesh,n=n_mesh,time_int=time_int))
         ##Apply mask to image_time
         image_time *= n_mask
         

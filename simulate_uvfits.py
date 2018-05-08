@@ -15,6 +15,8 @@ from os import environ
 import pickle
 from simulate_uvfits_lib import *
 from subprocess import call
+import healpy as hp
+from project_healpix import convert_healpix2lm
 
 MAJICK_DIR = environ['MAJICK_DIR']
 with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
@@ -36,7 +38,7 @@ parser = optparse.OptionParser()
 parser.add_option('-a', '--time_decor', default=True, action='store_false',
     help='Add to include time_decorrelation in the simulation')
 
-parser.add_option('-b', '--diffuse', default=False, action='store_true',
+parser.add_option('-b', '--degrid', default=False, action='store_true',
     help='Add to include the 2016 gsm sky model')
 
 parser.add_option('-c', '--tag_name', 
@@ -45,17 +47,17 @@ parser.add_option('-c', '--tag_name',
 parser.add_option('-d', '--date', default='2000-01-01T00:00:00',
     help="Enter date to start the observation on (YYYY-MM-DDThh:mm:ss), default='2000-01-01T00:00:00'")
 
-parser.add_option('-e', '--base_uvfits', default=False, 
-    help='Base fits file name and location (e.g. /location/file/uvfits_tag) tag to add diffuse model to (not needed if generating uvfits from srclist)')
+#parser.add_option('-e', '--base_uvfits', default=False, 
+    #help='Base fits file name and location (e.g. /location/file/uvfits_tag) tag to add diffuse model to (not needed if generating uvfits from srclist)')
 
-#parser.add_option('-f', '--freq_start',
-    #help='Enter lowest frequency (MHz) to simulate - this is lower band edge i.e. for freq_res=0.04, freq_start=167.035 will be simulated at 167.055')
+parser.add_option('-f', '--freq_start',default=False,
+    help='Enter lowest frequency (MHz) to simulate (if not using metafits) - this is lower band edge i.e. for freq_res=0.04, freq_start=167.035 will be simulated at 167.055')
 
 parser.add_option('-g', '--no_beam', default=False, action='store_true',
     help='Add to switch off the beam')
 
 parser.add_option('-i', '--data_loc', default='./data',
-    help='Location to output the uvfits to OR location of uvfits if just adding diffuse model. Default = ./data')
+    help='Location to output the uvfits to. Default = ./data')
 
 parser.add_option('-j', '--telescope', default='MWA_phase1',
     help='Uses the array layout and primary beam model as stored in MAJICK_DIR/telescopes - defaults to MWA_phase1')
@@ -72,8 +74,8 @@ parser.add_option('-m', '--num_times',
 parser.add_option('-n', '--num_freqs',default=32,
     help='Enter number of frequency channels per band to simulate - set to usual 32 for MWA')
 
-parser.add_option('-o', '--wproj',default=False,action='store_true',
-    help='Add to enable w-projection')
+parser.add_option('-o', '--no_wproj',default=True,action='store_false',
+    help='Add to switch off w-projection')
 
 parser.add_option('-p', '--phase_centre', default=False,
     help='Phase centre of the observation in degrees as RA,DEC - as a default tracks the intial zenith point')
@@ -81,8 +83,8 @@ parser.add_option('-p', '--phase_centre', default=False,
 parser.add_option('-q', '--l_value',
     help='l offset value for testing')
 
-parser.add_option('-r', '--new_uvfits', default=False, action='store_true',
-    help='Add to create a fully new uvfits file for the diffuse simulation')
+#parser.add_option('-r', '--new_uvfits', default=False, action='store_true',
+    #help='Add to create a fully new uvfits file for the diffuse simulation')
 
 parser.add_option('-s', '--srclist', default=False,
     help='Enter name of srclist from which to add point sources')
@@ -96,8 +98,8 @@ parser.add_option('-u', '--clobber',default=False,action='store_true',
 parser.add_option('-v', '--no_phase_tracking',default=False,action='store_true',
     help='Add to turn off phase tracking')
 
-parser.add_option('-w', '--add_to_existing',default=False,action='store_true',
-    help='Add to add simulations to previous uvfits')
+#parser.add_option('-w', '--add_to_existing',default=False,action='store_true',
+    #help='Add to add simulations to previous uvfits')
 
 parser.add_option('-x', '--time_res', default=False,
     help='Enter time resolution (s) of observations, default to what is in metafits')
@@ -111,8 +113,8 @@ parser.add_option('-z', '--freq_decor', default=True, action='store_false',
 parser.add_option('--over_sampled_kernel', default=False, action='store_true',
     help='Add to switch the kernel to the oversampled version rather than the phase shifting niceness')
 
-parser.add_option('--diffuse_test', default=False, action='store_true',
-    help='Add to make a single point source image for testing diffuse rather than use the GSM')
+parser.add_option('--degrid_test', default=False, action='store_true',
+    help='Add to make a single point source image for testing degrid rather than use the GSM')
 
 parser.add_option('--single_baseline', default=False, action='store_true',
     help='Add to only simulate one baseline - good for testing')
@@ -120,15 +122,21 @@ parser.add_option('--single_baseline', default=False, action='store_true',
 parser.add_option('--oversampling_factor', default=99,
     help='Set the oversampling factor if using an oversampled kernel')
 
-parser.add_option('--metafits',
+parser.add_option('--metafits',default=False,
     help='Enter name of metafits file to base obs on')
 
-parser.add_option('--band_num',
+parser.add_option('--band_num',default=False,
     help='Enter band number to simulate')
+
+parser.add_option('--bandwidth',default=30.72,
+    help='Enter the full instrument bandwidth in MHz (defaults to 30.72MHz)')
+
+parser.add_option('--healpix',default=False,
+    help='Enter a healpix map for degridding sims - needs to be in celestial coordinates')
 
 options, args = parser.parse_args()
 
-if options.diffuse_test:
+if options.degrid_test:
     MWA_LAT = 0
 
 #freq_start = float(options.freq_start)
@@ -157,40 +165,53 @@ else:
 if data_loc[-1] == '/': data_loc = data_loc[:-1]
 
 
-try:
-    f=fits.open(options.metafits)
-except Exception,e:
-    print 'Unable to open metafits file %s: %s' % (options.metafits,e)
-    exit(1)
-    
-def test_avail(key):
-    if not key in f[0].header.keys():
-        print 'Cannot find %s in %s' % (key,options.metafits)
+if options.metafits:
+    try:
+        f=fits.open(options.metafits)
+    except Exception,e:
+        print 'Unable to open metafits file %s: %s' % (options.metafits,e)
         exit(1)
+        
+    def test_avail(key):
+        if not key in f[0].header.keys():
+            print 'Cannot find %s in %s' % (key,options.metafits)
+            exit(1)
 
-for key in ['DATE-OBS','FREQCENT','FINECHAN','INTTIME','BANDWDTH','AZIMUTH','ALTITUDE','DELAYS','RA','DEC']:
-    test_avail(key)
+    for key in ['DATE-OBS','FREQCENT','FINECHAN','INTTIME','BANDWDTH','AZIMUTH','ALTITUDE','DELAYS','RA','DEC']:
+        test_avail(key)
 
 
-initial_date = f[0].header['DATE-OBS']
+    initial_date = f[0].header['DATE-OBS']
 
-time_res = float(f[0].header['INTTIME'])
-if options.time_res: time_res = float(options.time_res)
+    time_res = float(f[0].header['INTTIME'])
+    if options.time_res: time_res = float(options.time_res)
 
-ch_width = float(f[0].header['FINECHAN'])*1e+3
-freqcent = float(f[0].header['FREQCENT'])*1e+6
-b_width = float(f[0].header['BANDWDTH'])*1e+6
-low_freq = freqcent - (b_width/2) - (ch_width/2)
+    ch_width = float(f[0].header['FINECHAN'])*1e+3
+    freqcent = float(f[0].header['FREQCENT'])*1e+6
+    b_width = float(f[0].header['BANDWDTH'])*1e+6
+    low_freq = freqcent - (b_width/2) - (ch_width/2)
 
-freq_res = ch_width / 1.0e+6
+    freq_res = ch_width / 1.0e+6
 
-delay_str = f[0].header['DELAYS']
-print delay_str
+    delay_str = f[0].header['DELAYS']
+    print delay_str
 
-if delay_str == "32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32":
-    delay_str = "0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
+    if delay_str == "32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32":
+        delay_str = "0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
 
-delays = array([map(int,delay_str.split(',')),map(int,delay_str.split(','))])
+    delays = array([map(int,delay_str.split(',')),map(int,delay_str.split(','))])
+    
+    initial_ra_point = f[0].header['RA']
+    dec_point = f[0].header['DEC']
+    
+else:
+    initial_date = options.date
+    time_res = float(options.time_res)
+    ch_width = float(options.freq_res)*1e+6
+    freq_res = ch_width / 1e+6
+    b_width = float(options.bandwidth)*1e+6
+    low_freq = float(options.freq_start) * 1e+6
+    delays = zeros((2,16))
 
 ##TODO - make this generic, so you can use any telescope
 ##ephem Observer class, use this to compute LST from the date of the obs 
@@ -201,9 +222,15 @@ date,time = initial_date.split('T')
 MRO.date = '/'.join(date.split('-'))+' '+time
 initial_lst = float(MRO.sidereal_time())*R2D
 
-initial_ra_point = f[0].header['RA']
+print 'lst',initial_lst
+
+if options.metafits:
+    pass
+else:
+    initial_ra_point = initial_lst
+    dec_point = MWA_LAT
+
 ha_point = initial_lst - initial_ra_point
-dec_point = f[0].header['DEC']
 
 ##delays = zeros((2,16))
 ##ha_point = 0.0
@@ -215,14 +242,14 @@ dec_point = f[0].header['DEC']
 
 ##Unflagged channel numbers
 good_chans = [2,3,4,5,6,7,8,9,10,11,12,13,14,15,17,18,19,20,21,22,23,24,25,26,27,28,29]
+#good_chans = xrange(32)
 central_freq_chan = 15
 #good_chans = xrange(32)
-#good_chans = [2,3]
-#central_freq_chan = 2
+good_chans = [2,3]
+central_freq_chan = 2
 
 ##Flagged channel numbers
 #bad_chans = [0,1,16,30,31]
-
 
 band_num = int(options.band_num)
 base_freq = ((band_num - 1)*(b_width/24.0)) + low_freq
@@ -309,7 +336,7 @@ if srclist:
         source = create_calibrator(source_info)
         sources[source.name] = source
         
-if options.diffuse:
+if options.degrid:
     ##If using fix_beam, don't need to load beam images multiple times:
     ##big saving computationally
     if options.fix_beam:
@@ -367,30 +394,40 @@ else:
     v_range_kernel = None
 
 
-if options.diffuse_test:
+if options.degrid_test:
     half_width = 1.0
     image_size = 3051
+    #image_size = 31
     l_range = linspace(-half_width,half_width,2.0*image_size + 1)
     m_range = linspace(-half_width,half_width,2.0*image_size + 1)
     #l_reso_test = (2.0*half_width) / (2.0*image_size + 1)
     l_reso_test = l_range[1] - l_range[0]
     
-    l_off = int(options.l_value)
-    m_off = 0
+    #l_off = int(options.l_value)
+    #m_off = 0
     
-    image = zeros((int(2.0*image_size+1),int(2.0*image_size+1)))
-    l = l_range[image_size+l_off]
-    m = m_range[image_size+m_off]
-    image[image_size+m_off,image_size-l_off] = 1.0
+    #image = zeros((int(2.0*image_size+1),int(2.0*image_size+1)))
+    #l = l_range[image_size+l_off]
+    #m = m_range[image_size+m_off]
+    #image[image_size+m_off,image_size-l_off] = 1.0
     
-    IMGSIZE = image.shape[0]
-    img_oversamp = 3
+    #IMGSIZE = image.shape[0]
+    #img_oversamp = 1
     
-    oversamp_image = zeros(((img_oversamp)*IMGSIZE,(img_oversamp)*IMGSIZE))
-    lower = (img_oversamp*IMGSIZE) / 2 - (IMGSIZE / 2)
-    oversamp_image[lower:lower+IMGSIZE,lower:lower+IMGSIZE] = image
+    #oversamp_image = zeros(((img_oversamp)*IMGSIZE,(img_oversamp)*IMGSIZE))
+    #lower = (img_oversamp*IMGSIZE) / 2 - (IMGSIZE / 2)
+    #oversamp_image[lower:lower+IMGSIZE,lower:lower+IMGSIZE] = image
     
+    random.seed(17)
+    mu, sigma = 5, 3
+    oversamp_image = random.normal(mu, sigma, (int(2.0*image_size+1),int(2.0*image_size+1)))
+    
+    print 'FTing oversampled image'
     uv_data_array_test, u_sim_test, v_sim_test, u_reso_test = convert_image_lm2uv(image=oversamp_image,l_reso=l_reso_test)
+    print 'Done'
+    
+if options.healpix:
+    healpix_array = hp.read_map(options.healpix)
     
 
 time_range = time_start + arange(num_times)*time_res
@@ -402,6 +439,7 @@ int_jd, float_jd = calc_jdcal(initial_date)
 
 #@profile
 def simulate_frequency_channel(all_args=None):
+    print 'Doing frequency', all_args[1]
     
     freq_chan_index,freq = all_args
     freq_cent = freq + (ch_width / 2.0)
@@ -432,7 +470,6 @@ def simulate_frequency_channel(all_args=None):
         #ha_point = lst - ra_point
         ha_phase = lst - ra_phase
         
-        
         ##If not phase tracking, stick the zero point of l,m,n at zenith
         ##This means as observation goes on, a source dirfts through the
         ##l,m plane
@@ -449,11 +486,58 @@ def simulate_frequency_channel(all_args=None):
             baselines = xrange(1)
         else:
             baselines = xrange(num_baselines)
+        
+        ##Need to declare what uv_data_plane we have if doing a degridding simulation
+        ##Add degridding visibilities
+        if options.degrid:
+            ##If doing tests, already made image at start of options
+            if options.degrid_test:
+                l_off = int(options.l_value)
+                m_off = 0
+                ##Figure out where the point source is so can compare to analytic
+                test_srclist = open('srclist_%03d.txt' %l_off,'w+')
+                
+                l = l_range[image_size+l_off]
+                m = m_range[image_size+m_off]
+                ra_source = lst + arcsin(l)*R2D #- ((time_res / 2.0)*SOLAR2SIDEREAL*(15.0/3600.0))
+                dec_source = MWA_LAT + arcsin(m)*R2D
+                #print 'l offset %d is %.2f deg off zenith' %(l,arcsin(l)*R2D)
+                if ra_source > 360.0: ra_source -= 360.0
+                
+                test_srclist.write('SOURCE bleh%d%d %.5f %.5f\n' %(l_off,m_off,ra_source/15.0,dec_source))
+                test_srclist.write('FREQ 160e+6 1.0 0 0 0\n')
+                test_srclist.write('FREQ 180e+6 1.0 0 0 0\n')
+                test_srclist.write('ENDSOURCE\n')
+                test_srclist.close()
 
+                ##Need to assign these to the test values form above,
+                ##because we also declare them when not using the test option and python
+                ##throws a wobbly if we don't
+                uv_data_array, u_sim, v_sim, u_reso = uv_data_array_test, u_sim_test, v_sim_test, u_reso_test
+                l_reso = l_reso_test
+            
+            ##Take a healpix full sky map, rotate to observers frame, convert to u,v
+            elif options.healpix:
+                date = add_time_uvfits(initial_date,time)
+                e_date,e_time = date.split('T')
+                MRO.date = '/'.join(e_date.split('-'))+' '+e_time
+                print 'Converting healpix to l,m for time',date
+                image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=100)
+                print 'Done - now FTing to get uvplane'
+                uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso)
+                print 'Done'
+                
+            ##Otherwise, generate a diffuse sky image using the GSM, and FT to uv-space
+            else:
+                ##TODO - I think this may be half a time step off, need to give the central time
+                image, l_reso = generate_gsm_2016(freq=freq_cent,this_date=this_date,observer=MRO)
+                uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso)
+            
+        ra0,dec0 = coord_centre_ra*D2R,coord_centre_dec*D2R
+        phase_centre = [ra0,dec0]
+        outside_uv = 0
+        ##Go baseline by baseline and work out visibility
         for baseline in baselines:
-            
-            #xyz = antenna_table['STABXYZ'] * (freq_cent / VELC)
-            
             x_length,y_length,z_length = xyz_lengths[baseline,:]
             ##The old way of non-phase tracking
             if options.no_phase_tracking:
@@ -463,8 +547,6 @@ def simulate_frequency_channel(all_args=None):
         
             ##Container for this particular baseline uv data
             uv_baseline = zeros((4,3))
-            ##Set weights to one
-            uv_baseline[:,2] = 1.0
             
             if srclist:
                 ##For every source in the sky
@@ -487,101 +569,58 @@ def simulate_frequency_channel(all_args=None):
                         uv_baseline[1,:] += array([model_yypol.real,model_yypol.imag,0.0000])
                         uv_baseline[2,:] += array([model_xypol.real,model_xypol.imag,0.0000])
                         uv_baseline[3,:] += array([model_yxpol.real,model_yxpol.imag,0.0000])
+                        
+                        ##Set weights to one
+                        uv_baseline[:,2] = 1.0
+            
+            if options.degrid:
+                ##Due to the resolution of the GSM not all baselines will fall on the u,v
+                ##plane (u_extent = 1 / l_reso), so skip those that fail
+                #try:
+                ###u,v,w, stored in seconds in the uvfits
+                ##make sure we use the same u,v,w aleady stored in the uvfits
+                outside = False
+                half_grid_width = floor(KERNEL_SIZE / 2.0) * u_reso
+                
+                if u < (u_sim.min() + half_grid_width) or u > (u_sim.max() - half_grid_width): outside = True
+                if v < (v_sim.min() + half_grid_width) or v > (v_sim.max() - half_grid_width): outside = True
+                
+                if outside:
+                    outside_uv += 1
+                else:
+                    if options.no_wproj:
+                        wproj=False
+                    else:
+                        wproj=True
+                        
+                    if beam:
+                        uv_complex_XX,uv_complex_YY,this_image_XX,this_image_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
+                            kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline,:],
+                            phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
+                            freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=wproj,
+                            uv_kernel_XX=uv_kernel_XX,uv_kernel_YY=uv_kernel_YY,u_range_kernel=u_range_kernel,v_range_kernel=v_range_kernel,over_sampled=over_sampled,over_sampling=oversampling_factor)
+                    else:
+                        uv_complex_XX,uv_complex_YY,this_image_XX,this_image_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
+                            kernel='gaussian',freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline,:],
+                            phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
+                            freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=wproj)
+                    
+                    uv_baseline[0,:] += array([uv_complex_XX.real,uv_complex_XX.imag,0.0000])
+                    uv_baseline[1,:] += array([uv_complex_YY.real,uv_complex_YY.imag,0.0000])
+                    #uv_baseline[2,:] += array([model_xypol.real,model_xypol.imag,0.0000])
+                    #uv_baseline[3,:] += array([model_yxpol.real,model_yxpol.imag,0.0000])
+                    ##Set weights to one
+                    uv_baseline[:,2] = 1.0
             
             visi_data[array_time_loc+baseline,:,:] = uv_baseline
             
+        if options.degrid: print '%d points lie outside u,v plane so have been skipped' %outside_uv
+            
+    print 'weights for sim',visi_data[:,0,2].min(),visi_data[:,0,2].max()
     savez_compressed('%s/%s_%.3f.npz' %(tmp_dir,tag_name,freq),visi_data=visi_data)
-            
-    ###Add degridding visibilities
-    #if options.diffuse:
-        ###If doing tests, already made image at start of options
-        #if options.diffuse_test:
-            #l_off = int(options.l_value)
-            #m_off = 0
-            ###Figure out where the point source is so can compare to analytic
-            #test_srclist = open('srclist_%03d.txt' %l_off,'w+')
-            
-            #l = l_range[image_size+l_off]
-            #m = m_range[image_size+m_off]
-            #ra_source = lst + arcsin(l)*R2D #- ((time_res / 2.0)*SOLAR2SIDEREAL*(15.0/3600.0))
-            #dec_source = MWA_LAT + arcsin(m)*R2D
-            #print 'l offset %d is %.2f deg off zenith' %(l,arcsin(l)*R2D)
-            #if ra_source > 360.0: ra_source -= 360.0
-            
-            #test_srclist.write('SOURCE bleh%d%d %.5f %.5f\n' %(l_off,m_off,ra_source/15.0,dec_source))
-            #test_srclist.write('FREQ 160e+6 1.0 0 0 0\n')
-            #test_srclist.write('FREQ 180e+6 1.0 0 0 0\n')
-            #test_srclist.write('ENDSOURCE\n')
-            #test_srclist.close()
-
-            ###Need to assign these to the test values form above,
-            ###because we also declare them when not using the test option and python
-            ###throws a wobbly if we don't
-            #uv_data_array, u_sim, v_sim, u_reso = uv_data_array_test, u_sim_test, v_sim_test, u_reso_test
-            #l_reso = l_reso_test
         
-        ###Otherwise, generate a diffuse sky image using the GSM, and FT to uv-space
-        #else:
-            ###TODO - I think this may be half a time step off, need to give the central time
-            #image, l_reso = generate_gsm_2016(freq=freq_cent,this_date=this_date,observer=MRO)
-            #uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso)
+    ##MAKE DEGRIDDING GOOD LIKE THIS====================================================================
         
-        ###If we only want one baseline, make the range for one baseline
-        #if options.single_baseline:
-            #baseline_range = xrange(1)
-        #else:
-            #baseline_range = xrange(len(base_data))
-            
-        #ra0,dec0 = ra_phase*D2R,dec_phase*D2R
-        #phase_centre = [ra0,dec0]
-        #skipped_gsm = 0
-        #outside_uv = 0
-        
-        ###For each baseline
-        #for baseline in baseline_range:
-            ###Due to the resolution of the GSM not all baselines will fall on the u,v
-            ###plane (u_extent = 1 / l_reso), so skip those that fail
-            ##try:
-            ####u,v,w, stored in seconds in the uvfits
-            ###make sure we use the same u,v,w aleady stored in the uvfits
-            #u = write_data[baseline][0] * freq_cent
-            #v = write_data[baseline][1] * freq_cent
-            #w = write_data[baseline][2] * freq_cent
-            
-            #print 'u,v is',u,v
-            
-            #outside = False
-            #half_grid_width = floor(KERNEL_SIZE / 2.0) * u_reso
-            
-            #if u < (u_sim.min() + half_grid_width) or u > (u_sim.max() - half_grid_width): outside = True
-            #if v < (v_sim.min() + half_grid_width) or v > (v_sim.max() - half_grid_width): outside = True
-            
-            #if outside:
-                #skipped_gsm += 1
-                #if options.new_uvfits:
-                    #write_data[baseline][5][0,0,0,0,0,:] = array([0,0,0.0000])
-                    #write_data[baseline][5][0,0,0,0,1,:] = array([0,0,0.0000])
-            #else:
-                #if beam:
-                    #uv_complex_XX,uv_complex_YY,this_image_XX,this_image_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
-                        #kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline,:],
-                        #phase_centre=phase_centre,time_res=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
-                        #freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=options.wproj,
-                        #uv_kernel_XX=uv_kernel_XX,uv_kernel_YY=uv_kernel_YY,u_range_kernel=u_range_kernel,v_range_kernel=v_range_kernel,over_sampled=over_sampled,over_sampling=oversampling_factor)
-                #else:
-                    #uv_complex_XX,uv_complex_YY,this_image_XX,this_image_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
-                        #kernel='gaussian',freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline,:],
-                        #phase_centre=phase_centre,time_res=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
-                        #freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=options.wproj)
-                
-                #if options.new_uvfits:
-                    #write_data[baseline][5][0,0,0,0,0,:] = array([real(uv_complex_XX),imag(uv_complex_XX),0.0000])
-                    #write_data[baseline][5][0,0,0,0,1,:] = array([real(uv_complex_YY),imag(uv_complex_YY),0.0000])
-                #else:
-                    #write_data[baseline][5][0,0,0,0,0,:] += array([real(uv_complex_XX),imag(uv_complex_XX),0.0000])
-                    #write_data[baseline][5][0,0,0,0,1,:] += array([real(uv_complex_YY),imag(uv_complex_YY),0.0000])
-                
-
 
 sim_freqs = []
 for chan in good_chans:
@@ -623,7 +662,6 @@ if options.multi_process:
 else:
     for all_args in all_args_list:
         simulate_frequency_channel(all_args)
-        print '----------------------------------'
             
 ##Read in all the saved tmp npz files and write out a uvfits file
 

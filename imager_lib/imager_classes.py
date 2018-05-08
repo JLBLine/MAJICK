@@ -7,7 +7,7 @@ from uvdata_classes import *
 from gridding_functions import *
 from astropy.io import fits
 from ephem import Observer,degrees
-from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,savetxt
+from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,savetxt,isnan
 from numpy import abs as np_abs
 from numpy import exp as np_exp
 from cmath import phase,exp
@@ -79,7 +79,6 @@ class Imager(object):
         for cali_info in cali_src_info:
             Cali_source = create_calibrator(cali_info)
             calibrator_sources[Cali_source.name] = Cali_source
-            
         num_freq_avg = int(self.freq_int/self.uv_container.freq_res)
         num_time_avg = int(self.time_int/self.uv_container.time_res)
         
@@ -126,7 +125,7 @@ class Imager(object):
                 freq_cent = freq + (self.uv_container.freq_res / 2.0)
                 
                 ##This is the initial LST of this group of uvfits, and the centre of the first time step
-                intial_lst = self.uv_container.uv_data['%.3f_%05.2f' %(freq,time)].central_LST #- SOLAR2SIDEREAL*(15.0/3600.0)
+                initial_lst = self.uv_container.uv_data['%.3f_%05.2f' %(freq,time)].central_LST #- SOLAR2SIDEREAL*(15.0/3600.0)
 
                 ##In the following, find the LST and frequency at the centre of the set of
                 ##visis being averaged over
@@ -140,12 +139,12 @@ class Imager(object):
                     half_time_cadence -= self.uv_container.time_res / 2.0
                     half_time_cadence *= SOLAR2SIDEREAL*(15.0/3600.0)
                     #half_time_cadence = num_time_avg * (uv_container.time_res / 2.0) * SOLAR2SIDEREAL*(15.0/3600.0)
-                ##the intial_lst is the central lst of the first time step, so if not averaging, don't
+                ##the initial_lst is the central lst of the first time step, so if not averaging, don't
                 ##need to add anything
                 else:
                     half_time_cadence = 0
                     
-                central_lst = intial_lst + half_time_cadence 
+                central_lst = initial_lst + half_time_cadence 
                 if central_lst > 360: central_lst -= 360.0
                 sum_pixel.lst = central_lst
                 #out_uv = open("time_%02d_%02d_decor.txt" %(time_start,freq_start),'w+')
@@ -369,7 +368,7 @@ class Imager(object):
         self.vv_range = vv_range
         
         empty_uv = zeros((len(vv_range),len(uu_range)),dtype=complex)
-        
+        #print(self.freq_int,self.uv_container.freq_res)
         num_freq_avg = int(self.freq_int/self.uv_container.freq_res)
         num_time_avg = int(self.time_int/self.uv_container.time_res)
         
@@ -377,7 +376,9 @@ class Imager(object):
         
         for time_start in range(0,len(self.uv_container.times),num_time_avg):
             for freq_start in range(0,len(self.uv_container.freqs),num_freq_avg):
+                print('Gridding time_start freq_start',time_start,freq_start)
                 sum_xxpol_comps = None
+                sum_xxpol_weights = None
                 
                 #print("Gridding time cadence: %02d, freq cadence %02d" %(time_start,freq_start))
                 for time_int in range(time_start,time_start+num_time_avg):
@@ -391,8 +392,10 @@ class Imager(object):
 
                         if type(sum_xxpol_comps) == ndarray:
                             sum_xxpol_comps += xxpol_comps
+                            sum_xxpol_weights += xxpol_weight
                         else:
                             sum_xxpol_comps = xxpol_comps
+                            sum_xxpol_weights = xxpol_weight
                             
                 sum_xxpol_comps /= (num_freq_avg * num_time_avg)
                             
@@ -402,8 +405,8 @@ class Imager(object):
                 ##Central frequency of the the first freq step of this cadence
                 freq_cent = freq + (self.uv_container.freq_res / 2.0)
                 
-                ##This is the initial LST of this group of uvfits, and the centre of the first time step
-                intial_lst = self.uv_container.uv_data['%.3f_%05.2f' %(freq,time)].central_LST #- SOLAR2SIDEREAL*(15.0/3600.0)
+                ##This centre of the very first time step in this UVContainer
+                initial_lst = self.uv_container.central_LST #- SOLAR2SIDEREAL*(15.0/3600.0)
 
                 ##In the following, find the LST and frequency at the centre of the set of
                 ##visis being averaged over
@@ -411,13 +414,13 @@ class Imager(object):
                 ##central LST of the averaged time from the start of the set of times
                 if num_time_avg > 1:
                     half_time_cadence = num_time_avg * (self.uv_container.time_res / 2.0) * SOLAR2SIDEREAL*(15.0/3600.0)
-                ##the intial_lst is the central lst of the first time step, so if not averaging, don't
+                ##the initial_lst is the central lst of the first time step, so if not averaging, don't
                 ##need to add anything
                 else:
                     half_time_cadence = 0
                 #half_time_cadence = 0
                 
-                central_lst = intial_lst + half_time_cadence 
+                central_lst = initial_lst + half_time_cadence 
                 if central_lst > 360: central_lst -= 360.0
                 #out_uv = open("time_%02d_%02d_decor.txt" %(time_start,freq_start),'w+')
                 ##Get some relevant positions and data
@@ -428,17 +431,20 @@ class Imager(object):
                 ##If averaging over more than one frequeny, work out distance
                 ##of cadence centre to start of cadence
                 if num_freq_avg > 1:
-                    half_freq_cadence = num_freq_avg * (self.uv_container.freq_res / 2.0) * 1e+6
+                    half_freq_cadence = num_freq_avg * (self.uv_container.freq_res / 2.0)
                 else:
                     half_freq_cadence = 0
                     
-                central_frequency = freq_cent*1e+6 + half_freq_cadence
+                central_frequency = freq_cent + half_freq_cadence
                 
                 self.freq_cent = central_frequency
                 
                 ##These are the non frequency scaled lengths in X,Y,Z
-                xyzs = array(self.uv_container.xyz_lengths_unscaled)
+                xyzs = array(self.uv_container.xyz_lengths)
                 ##Seperate out into x,y,z
+                #x_lengths = xyzs[:self.uv_container.num_baselines,0]
+                #y_lengths = xyzs[:self.uv_container.num_baselines,1]
+                #z_lengths = xyzs[:self.uv_container.num_baselines,2]
                 x_lengths = xyzs[:,0]
                 y_lengths = xyzs[:,1]
                 z_lengths = xyzs[:,2]
@@ -446,10 +452,21 @@ class Imager(object):
                 ##Calculate the u,v,w coords for all baselines at the centre of the integration
                 avg_uu, avg_vv, avg_ww = get_uvw_freq(x_length=x_lengths,y_length=y_lengths,z_length=z_lengths,dec=dec0,ha=h0,freq=central_frequency)
                 
-                self.avg_uu = avg_uu
-                self.avg_vv = avg_vv
-                self.avg_ww = avg_ww
-                self.sum_xxpol_comps = sum_xxpol_comps
+                
+                mask = where(sum_xxpol_weights != 0.0)
+                #print(where(isnan(sum_xxpol_comps) == True))
+                #print(where(isnan(sum_xxpol_weights) == True))
+                #mask = arange(len(sum_xxpol_weights))
+                
+                #self.avg_uu = avg_uu[mask]
+                #self.avg_vv = avg_vv[mask]
+                #self.avg_ww = avg_ww[mask]
+                #self.sum_xxpol_comps = sum_xxpol_comps[mask]
+                avg_uu = avg_uu[mask]
+                avg_vv = avg_vv[mask]
+                avg_ww = avg_ww[mask]
+                sum_xxpol_comps = sum_xxpol_comps[mask]
+                print(sum_xxpol_comps[:10])
                 #self.sum_yypol_comps = sum_yypol_comps
                 
                 ##Define weights here simply as the number of visibilities (times two because complex conjugates)
@@ -471,7 +488,6 @@ class Imager(object):
                     empty_uv = grid(container=empty_uv,u_coords=-avg_uu, v_coords=-avg_vv, u_range=uu_range, v_range=vv_range,complexes=conjugate(sum_xxpol_comps), weights=None, resolution=cell_reso,kernel='gaussian',kernel_params=self.uv_container.kernel_params,central_lst=central_lst,time_decor=True,xyz_lengths=xyzs,phase_centre=[self.ra_phase,self.dec_phase],time_int=self.time_int,freq_decor=True,freq_int=self.freq_int,central_frequency=central_frequency)
                     
                 else:
-                    print('here')
                     self.uv_container.kernel_params = [2.0,2.0]
                     empty_uv = grid(container=empty_uv,u_coords=avg_uu, v_coords=avg_vv, u_range=uu_range, v_range=vv_range,complexes=sum_xxpol_comps, weights=None, resolution=cell_reso)
                     empty_uv = grid(container=empty_uv,u_coords=-avg_uu, v_coords=-avg_vv, u_range=uu_range, v_range=vv_range,complexes=conjugate(sum_xxpol_comps), weights=None, resolution=cell_reso)

@@ -157,7 +157,7 @@ class UVData(object):
         self.data = None
         
 class UVContainer(object):
-    def __init__(self,uvfits_files=None,add_phase_track=False,date=False,time_res=None,phase_centre=False):
+    def __init__(self,uvfits_files=None,add_phase_track=False,date=False,time_res=None,phase_centre=False,load_num_times=None,load_num_freqs=None):
         '''An array containing UVData objects in shape = (num time steps, num freq steps'''
         ##TODO do an error check for all required uvfits files
         ##Have a custom error?
@@ -180,6 +180,8 @@ class UVContainer(object):
         self.antenna_pairs = None
         self.xyz_lengths = None
         self.first_date = None
+        self.load_num_freqs = load_num_freqs
+        self.load_num_times = load_num_times
         
         ##TODO set the 0 time step from the date of the first obs??
         for uvfits_ind,uvfits in enumerate(uvfits_files):
@@ -278,20 +280,22 @@ class UVContainer(object):
             if first_uvfits:
                 self.initial_LST = initial_LST
         
+        
         ##To work out the time resolution need to subtract
         ##two different time steps from one another
         num_timesteps = int(HDU[0].header['GCOUNT'] / self.num_baselines)
-        if num_timesteps == 1:
-            print('Only one timestep - cannot auto calculate the time resolution')
-            print('Setting time resolution to 0.0 - things might go wrong')
-            time_res = 0.0
-            if first_uvfits:
-                self.time_res = 0.0
-        else:
-            date_array = HDU[0].data['DATE']
-            time_res = round((date_array[self.num_baselines] - date_array[0])* (24.0*60.*60.),2)
-            if first_uvfits:
-                self.time_res = time_res
+        if self.time_res == None:
+            if num_timesteps == 1:
+                print('Only one timestep - cannot auto calculate the time resolution')
+                print('Setting time resolution to 0.0 - things might go wrong')
+                time_res = 0.0
+                if first_uvfits:
+                    self.time_res = 0.0
+            else:
+                date_array = HDU[0].data['DATE']
+                time_res = round((date_array[self.num_baselines] - date_array[0])* (24.0*60.*60.),2)
+                if first_uvfits:
+                    self.time_res = time_res
         
         ##add on half a time resolution to find the LST
         ##at the centre of this
@@ -302,7 +306,7 @@ class UVContainer(object):
         if first_uvfits:
             self.central_LST = central_LST
             
-        time_range = arange(num_timesteps)*time_res
+        time_range = arange(num_timesteps)*self.time_res
         
         if self.add_phase_track:
             ##Calculate u,v,w coords towards the new phase centre
@@ -321,7 +325,7 @@ class UVContainer(object):
             y_lens = tile(self.xyz_lengths[:,1],num_timesteps)
             z_lens = tile(self.xyz_lengths[:,2],num_timesteps)
             
-            print(self.ra_phase,MWA_LAT)
+            #print(self.ra_phase,MWA_LAT)
             
             uu_meters,vv_meters,ww_meters = get_uvw(x_lens,y_lens,z_lens,self.dec_phase*D2R,(these_LSTs - self.ra_phase)*D2R)
         else:
@@ -346,7 +350,17 @@ class UVContainer(object):
         max_vs = []
         min_vs = []
         
-        for chan_ind,freq in enumerate(freqs):
+        if self.load_num_times:
+            load_num_times = self.load_num_times
+        else:
+            load_num_times = arange(len(time_range))
+        if self.load_num_freqs:
+            load_num_freqs = self.load_num_freqs
+        else:
+            load_num_freqs = arange(len(freqs))
+        
+        
+        for chan_ind,freq in zip(load_num_freqs,freqs[load_num_freqs]):
             self.freqs.append(freq)
             if seven_len:
                 visi_data = HDU[0].data['DATA'][:,0,0,0,chan_ind,:,:].copy()
@@ -390,7 +404,7 @@ class UVContainer(object):
                 visi_data[:,3,0] = rotated_yx.real
                 visi_data[:,3,1] = rotated_yx.imag
                 
-            for time_ind,time in enumerate(time_range):
+            for time_ind,time in zip(load_num_times,time_range[load_num_times]):
                 self.times.append(time)
                 uvdata = UVData(uvfits)
                 
