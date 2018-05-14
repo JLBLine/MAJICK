@@ -334,10 +334,11 @@ class Imager(object):
         return sum_pixels
                         
                             
-    def grid(self,image_size=None,over_sampling=2.0):
+    def grid(self,image_size=None,over_sampling=2.0,mode='CPU'):
         '''Grids the data without correcting for decorrelation'''
         self.image_size=image_size
-        
+        ##Set whether in CPU or GPU mode for FFT
+        self.mode = mode
         ##Resolution in u,v plane is set by the size of the image
         ##in l,m coords, so sine of the angle - as zero is set
         ##by the field centre, need to divide by two before
@@ -356,9 +357,25 @@ class Imager(object):
         
         max_coord = max(abs(array([max_u,max_v,min_u,min_v])))*over_sampling
         n2max = int(max_coord / cell_reso) + 1
+
+        #if mode == 'CPU':
+            #uu_range = arange(-n2max,n2max+1,1.0)*cell_reso
+            #vv_range = arange(-n2max,n2max+1,1.0)*cell_reso
+
+        #elif mode == 'GPU':
+        ##Have to grid with an nside of power of 2
+        ##if using the GPU
+        pow2s = [2**power for power in arange(0,20,1)]
+        grid_pow = 0
+        ##Find the minimum grid size
+        for ind in arange(len(pow2s)-1):
+            low_pow = pow2s[ind]
+            high_pow = pow2s[ind+1]
+            if low_pow < n2max*2 and n2max*2 < high_pow:
+                grid_pow = high_pow
         
-        uu_range = arange(-n2max,n2max+1,1.0)*cell_reso
-        vv_range = arange(-n2max,n2max+1,1.0)*cell_reso
+        uu_range = arange(-grid_pow/2, grid_pow/2,1.0)*cell_reso
+        vv_range = arange(-grid_pow/2, grid_pow/2,1.0)*cell_reso
         
         print('Gridding with N-side',len(uu_range))
         
@@ -466,7 +483,6 @@ class Imager(object):
                 avg_vv = avg_vv[mask]
                 avg_ww = avg_ww[mask]
                 sum_xxpol_comps = sum_xxpol_comps[mask]
-                print(sum_xxpol_comps[:10])
                 #self.sum_yypol_comps = sum_yypol_comps
                 
                 ##Define weights here simply as the number of visibilities (times two because complex conjugates)
@@ -504,7 +520,23 @@ class Imager(object):
         print("Now FTing gridded data....")
         
         gridded_shift = fft.ifftshift(self.gridded_uv)
-        img_array = fft.ifft2(gridded_shift) * (self.naxis_u * self.naxis_v)
+        
+        if self.mode == 'CPU':
+            img_array = fft.ifft2(gridded_shift) * (self.naxis_u * self.naxis_v)
+        elif self.mode == 'GPU':
+            ##GPU CODE-------------------------------------
+            cuda.init()
+            context = make_default_context()
+            stream = cuda.Stream()
+
+            plan = Plan(gridded_shift.shape, stream=stream)
+
+            gpu_data = gpuarray.to_gpu(gridded_shift.astype(complex64))
+
+            plan.execute(gpu_data, inverse=True)
+            img_array = gpu_data.get() * (self.naxis_u * self.naxis_v)
+            context.pop()
+        
         img_array_shift = fft.fftshift(img_array)
         ##RA is backwards in images / fits files so invert l_axis
         #img_array_shift = img_array_shift[:,::-1]
@@ -514,14 +546,35 @@ class Imager(object):
         if self.kernel == 'gaussian' or self.kernel == 'time_decor' or self.kernel == 'time+freq_decor':
             ##Calcuate the l,m coords of the image array,
             ##and populate a meshgrid with them
+            #l_extent = 1.0 / self.cell_reso
+            #l_reso = (l_extent / (self.naxis_u))
+            #n2max = int((l_extent/2) / l_reso)
+            
+            #if self.mode == 'CPU':
+                #l_range = arange(-n2max,n2max+1, 1) * l_reso
+                #m_range = arange(-n2max,n2max+1, 1) * l_reso
+                #l_mesh, m_mesh = meshgrid(l_range,m_range)
+            #elif self.mode == 'GPU':
+                #l_range = arange(-n2max,n2max, 1) * l_reso
+                #m_range = arange(-n2max,n2max, 1) * l_reso
+                #l_mesh, m_mesh = meshgrid(l_range,m_range)
+                
+            num_pixel = img_array_shift.shape[0]
             l_extent = 1.0 / self.cell_reso
-            l_reso = (l_extent / (self.naxis_u))
-            n2max = int((l_extent/2) / l_reso)
+            l_reso = (l_extent / num_pixel)
+                
+            l_offset = -(l_reso / 2.0)
+            max_l = (num_pixel*l_reso) / 2.0
+            if num_pixel % 2 == 0:
+                l_range = linspace(-max_l-l_offset,max_l+l_offset,num_pixel) - l_reso/2.0
+                m_range = linspace(-max_l-l_offset,max_l+l_offset,num_pixel) - l_reso/2.0
+                
+            else:
+                l_range = linspace(-max_l-l_offset,max_l+l_offset,num_pixel)
+                m_range = linspace(-max_l-l_offset,max_l+l_offset,num_pixel)
             
-            l_range = arange(-n2max,n2max+1, 1) * l_reso
-            m_range = arange(-n2max,n2max+1, 1) * l_reso
             l_mesh, m_mesh = meshgrid(l_range,m_range)
-            
+                
             ##Calcuate the guassian created in image space create by the kernel gaussian
             ##1 over the image_gaussian as we want to multiply image by correction factor
             ##Do this as we want to mask poor pixels and not correct for them by setting to False;
@@ -573,19 +626,30 @@ class Imager(object):
             hdulist = fits.HDUList([hdu])
             header = hdulist[0].header
             
-            l_extent = 1.0 / self.cell_reso
+            #l_extent = 1.0 / self.cell_reso
             
-            header['CRPIX1']  = int(self.naxis_u / 2.0) + 1  ##+1 because fits files are 1 indexed
-            header['CRPIX2']  = int(self.naxis_v / 2.0) + 1
+            #header['CRPIX1']  = int(self.naxis_u / 2.0) + 1  ##+1 because fits files are 1 indexed
+            #header['CRPIX2']  = int(self.naxis_v / 2.0) + 1
+            #header['CRVAL1']  = self.ra_phase
+            #header['CRVAL2']  = self.dec_phase
+            #header['CDELT1']  = -(l_extent / self.naxis_u)*R2D
+            #header['CDELT2']  = (l_extent / self.naxis_v)*R2D
+            #header['CTYPE1']  = 'RA---SIN'
+            #header['CTYPE2']  = 'DEC--SIN'
+            #header['RADECSYS'] = 'FK5     '
+            #header['EQUINOX'] =  2000.
+            
+            header['CRPIX1']  = int(img_array_shift.shape[0] / 2.0) + 1  ##+1 because fits files are 1 indexed
+            header['CRPIX2']  = int(img_array_shift.shape[1] / 2.0) + 1
             header['CRVAL1']  = self.ra_phase
             header['CRVAL2']  = self.dec_phase
-            header['CDELT1']  = -(l_extent / self.naxis_u)*R2D
-            header['CDELT2']  = (l_extent / self.naxis_v)*R2D
+            header['CDELT1']  = -l_reso*R2D
+            header['CDELT2']  = l_reso*R2D
             header['CTYPE1']  = 'RA---SIN'
             header['CTYPE2']  = 'DEC--SIN'
             header['RADECSYS'] = 'FK5     '
             header['EQUINOX'] =  2000.
-            
-            hdu.writeto(fits_name,clobber=True)
+
+            hdu.writeto(fits_name,overwrite=True)
             
         return img_array_shift

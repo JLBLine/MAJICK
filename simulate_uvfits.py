@@ -16,7 +16,7 @@ import pickle
 from simulate_uvfits_lib import *
 from subprocess import call
 import healpy as hp
-from project_healpix import convert_healpix2lm
+from project_healpix import convert_healpix2lm,find_healpix_zenith_offset
 
 MAJICK_DIR = environ['MAJICK_DIR']
 with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
@@ -101,7 +101,7 @@ parser.add_option('-v', '--no_phase_tracking',default=False,action='store_true',
 #parser.add_option('-w', '--add_to_existing',default=False,action='store_true',
     #help='Add to add simulations to previous uvfits')
 
-parser.add_option('-x', '--time_res', default=False,
+parser.add_option('-x', '--time_res', default=None,
     help='Enter time resolution (s) of observations, default to what is in metafits')
 
 parser.add_option('-y', '--freq_res', default=0.04,
@@ -144,7 +144,6 @@ if options.degrid_test:
 num_freq_channels = int(options.num_freqs)
 
 time_start = float(options.time_start)
-#time_res = float(options.time_res)
 num_times = int(options.num_times)
 
 srclist = options.srclist
@@ -245,8 +244,8 @@ good_chans = [2,3,4,5,6,7,8,9,10,11,12,13,14,15,17,18,19,20,21,22,23,24,25,26,27
 #good_chans = xrange(32)
 central_freq_chan = 15
 #good_chans = xrange(32)
-good_chans = [2,3]
-central_freq_chan = 2
+#good_chans = [2]
+#central_freq_chan = 2
 
 ##Flagged channel numbers
 #bad_chans = [0,1,16,30,31]
@@ -322,6 +321,23 @@ for baseline in baselines:
     xyz_lengths.append([x_length,y_length,z_length])
     
 xyz_lengths = array(xyz_lengths)
+
+##Want to work out the maximum u,v coord for degridding
+##so we can make an appropriately sized u,v plane to
+##degrid from
+if options.degrid:
+    ##The higher the frequency, the lower the wavelength, as so the bigger the
+    ##u,v coord for a given baseline
+    
+    max_freq = base_freq + (good_chans[-1]*ch_width)
+    print('Max freq is',max_freq)
+    
+    ##Max u,v is at zenith for a coplanar array
+    
+    uu_max,vv_max,ww_max = get_uvw_freq(xyz_lengths[:,0],xyz_lengths[:,1],xyz_lengths[:,2],MWA_LAT*D2R,0.0,max_freq)
+    
+    max_uv = max([abs(uu_max.min())],abs(uu_max.max()),abs(vv_max.min()),abs(vv_max.max()))
+    print 'max_uv is', max_uv
 
 if srclist:
     try:
@@ -403,13 +419,13 @@ if options.degrid_test:
     #l_reso_test = (2.0*half_width) / (2.0*image_size + 1)
     l_reso_test = l_range[1] - l_range[0]
     
-    #l_off = int(options.l_value)
-    #m_off = 0
+    l_off = int(options.l_value)
+    m_off = 0
     
-    #image = zeros((int(2.0*image_size+1),int(2.0*image_size+1)))
-    #l = l_range[image_size+l_off]
-    #m = m_range[image_size+m_off]
-    #image[image_size+m_off,image_size-l_off] = 1.0
+    image = zeros((int(2.0*image_size+1),int(2.0*image_size+1)))
+    l = l_range[image_size+l_off]
+    m = m_range[image_size+m_off]
+    image[image_size+m_off,image_size-l_off] = 1.0
     
     #IMGSIZE = image.shape[0]
     #img_oversamp = 1
@@ -418,16 +434,20 @@ if options.degrid_test:
     #lower = (img_oversamp*IMGSIZE) / 2 - (IMGSIZE / 2)
     #oversamp_image[lower:lower+IMGSIZE,lower:lower+IMGSIZE] = image
     
-    random.seed(17)
-    mu, sigma = 5, 3
-    oversamp_image = random.normal(mu, sigma, (int(2.0*image_size+1),int(2.0*image_size+1)))
+    #random.seed(17)
+    #mu, sigma = 5, 3
+    #oversamp_image = random.normal(mu, sigma, (int(2.0*image_size+1),int(2.0*image_size+1)))
     
     print 'FTing oversampled image'
-    uv_data_array_test, u_sim_test, v_sim_test, u_reso_test = convert_image_lm2uv(image=oversamp_image,l_reso=l_reso_test)
+    #uv_data_array_test, u_sim_test, v_sim_test, u_reso_test = convert_image_lm2uv(image=oversamp_image,l_reso=l_reso_test)
+    uv_data_array_test, u_sim_test, v_sim_test, u_reso_test = convert_image_lm2uv(image=image,l_reso=l_reso_test)
     print 'Done'
     
 if options.healpix:
-    healpix_array = hp.read_map(options.healpix)
+    healpix_array,healpix_header = hp.read_map(options.healpix,h=True)
+    for keyword,value in healpix_header:
+        if keyword == 'NSIDE':
+            nside = value
     
 
 time_range = time_start + arange(num_times)*time_res
@@ -448,6 +468,7 @@ def simulate_frequency_channel(all_args=None):
     ##Create empty data structures to save data into
     visi_data = zeros((n_data,4,3))
     
+    print 'Time range is', time_range
     for time_ind,time in enumerate(time_range):
         #print 'Doing band %02d freq %.3f time %02d'  %(band_num,freq,time)
         
@@ -518,20 +539,38 @@ def simulate_frequency_channel(all_args=None):
             
             ##Take a healpix full sky map, rotate to observers frame, convert to u,v
             elif options.healpix:
+                print initial_date,time
                 date = add_time_uvfits(initial_date,time)
                 e_date,e_time = date.split('T')
                 MRO.date = '/'.join(e_date.split('-'))+' '+e_time
-                print 'Converting healpix to l,m for time',date
-                image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=100)
+                print 'Converting healpix to l,m for time',date,
+                
+                #max_uv = 1000
+                image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=max_uv)
                 print 'Done - now FTing to get uvplane'
-                uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso)
+                
+                ra_off, dec_off = find_healpix_zenith_offset(nside=nside,observer=MRO)
+                ra_off, dec_off = None, None
+                
+                uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso,ra_offset=ra_off,dec_offset=dec_off)
                 print 'Done'
                 
             ##Otherwise, generate a diffuse sky image using the GSM, and FT to uv-space
             else:
                 ##TODO - I think this may be half a time step off, need to give the central time
-                image, l_reso = generate_gsm_2016(freq=freq_cent,this_date=this_date,observer=MRO)
-                uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso)
+                date = add_time_uvfits(initial_date,time)
+                e_date,e_time = date.split('T')
+                MRO.date = '/'.join(e_date.split('-'))+' '+e_time
+                print 'Converting healpix to l,m for time',date,
+                nside,healpix_array = generate_gsm_2016(freq=freq_cent,this_date=date,observer=MRO)
+                #max_uv = 1000
+                image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=max_uv)
+                print 'Done - now FTing to get uvplane'
+                
+                ra_off, dec_off = find_healpix_zenith_offset(nside=nside,observer=MRO)
+                ra_off, dec_off = None, None
+                
+                uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso,ra_offset=ra_off,dec_offset=dec_off)
             
         ra0,dec0 = coord_centre_ra*D2R,coord_centre_dec*D2R
         phase_centre = [ra0,dec0]

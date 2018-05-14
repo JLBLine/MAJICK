@@ -7,7 +7,7 @@ from __future__ import absolute_import
 from uvdata_classes import *
 #from astropy.io import fits
 #from ephem import Observer,degrees
-from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,linspace,sinc,repeat,reshape,loadtxt,nan_to_num,ones,conjugate,complex128
+from numpy import sin,cos,pi,array,sqrt,arange,zeros,fft,meshgrid,where,arcsin,mod,real,ndarray,ceil,linspace,sinc,repeat,reshape,loadtxt,nan_to_num,ones,conjugate,complex128,complex64
 from numpy import abs as np_abs
 from numpy import exp as np_exp
 from cmath import phase,exp
@@ -22,6 +22,15 @@ from mwapy.pb import mwa_tile
 from os import environ
 import pickle
 from numba import jit
+
+try:
+    from pyfft.cuda import Plan
+    import pycuda.driver as cuda
+    from pycuda.tools import make_default_context
+    import pycuda.gpuarray as gpuarray
+except:
+    pass
+
 
 MAJICK_DIR = environ['MAJICK_DIR']
 with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
@@ -226,8 +235,9 @@ def fdecorr(u=None,v=None,w=None,l=None,m=None,n=None,chan_width=None,freq=None,
     
     #return sinc(chan_width*t_g)
     
-#@jit(cache=True)
+@jit(cache=True)
 def find_closet_uv(u=None,v=None,u_range=None,v_range=None,resolution=None):
+    #print(u,v)
     ##Find the difference between the gridded u coords and the desired u
     u_offs = np_abs(u_range - u)
     ##Find out where in the gridded u coords the current u lives;
@@ -277,6 +287,9 @@ def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None
         if kernel == 'gaussian':
             sig_x,sig_y = kernel_params
             #kernel_array = gaussian(sig_x=sig_x,sig_y=sig_y,x_offset=u_off,y_offset=v_off)
+            
+            ##TODO TODO TODO DO THIS
+            ##Think this needs to span different l,m space for an even array???????
             
             ##Calculate the extent of the pixels in l,m space
             l_extent = 1.0 / resolution
@@ -344,6 +357,7 @@ def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None
             kernel_array = image2kernel(image=image_kernel,cell_reso=resolution,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
             
         else:
+            print('YOU ARE HERE YOU FOOL')
             kernel_array = array([[complex(1,0)]])
             
         ##Multiply the kernal by the complex value
@@ -354,30 +368,80 @@ def grid(container=None,u_coords=None, v_coords=None, u_range=None, v_range=None
         
     return container
 
-from pyfft.cuda import Plan
-import pycuda.driver as cuda
-from pycuda.tools import make_default_context
-import pycuda.gpuarray as gpuarray
-from numpy import complex64
+#def convert_image_lm2uv(image=None,l_reso=None,mode='CPU'):
+    #'''Takes an l,m projected all sky and ffts to give a u,v plane from which
+    #to (re)grid from'''
+    
+    #num_pixel = image.shape[0]
+    
+    #max_u = (0.5 / l_reso)
+    #u_reso = (2*max_u) / float(num_pixel)
+    #u_offset = -(u_reso / 2.0)
 
-def convert_image_lm2uv(image=None,l_reso=None):
+    #if num_pixel % 2 == 0:
+        #u_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel) - u_reso/2.0
+        #v_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel) - u_reso/2.0
+        
+        #shift_image = fft.fftshift(image)
+        #if mode == 'CPU':
+            #uv_data_array = fft.fft2(shift_image) #/ (image.shape[0] * image.shape[1])
+
+        #elif mode == 'GPU':
+            ###GPU CODE-------------------------------------
+            #cuda.init()
+            #context = make_default_context()
+            #stream = cuda.Stream()
+
+            #plan = Plan(shift_image.shape, stream=stream)
+
+            #gpu_data = gpuarray.to_gpu(shift_image.astype(complex64))
+
+            #plan.execute(gpu_data)
+            #uv_data_array = gpu_data.get()
+            #context.pop()
+        ###GPU CODE-------------------------------------
+        
+        #uv_data_array = fft.ifftshift(uv_data_array)
+        
+        #u_mesh, v_mesh = meshgrid(u_sim,v_sim)
+        ###As an even data array has l,m = 0,0 outside of a pixel, need to shift centre
+        ###of the image to account for this. An offset in l,m space is a phase change in u,v
+        ###space so apply a phase shift of half a pixel's worth to the uv_data array
+        ##uv_data_array *= np_exp(-2j*pi*(u_mesh*(l_reso/2.0) + v_mesh*(l_reso/2.0)))
+    
+    #else:
+        #u_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
+        #v_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
+        
+        #shift_image = fft.ifftshift(image)
+        #uv_data_array = fft.fft2(shift_image) #/ (image.shape[0] * image.shape[1])
+        #uv_data_array = fft.fftshift(uv_data_array)
+        
+    #return uv_data_array,u_sim,v_sim,u_reso
+    
+def convert_image_lm2uv(image=None,l_reso=None,mode='CPU',ra_offset=None,dec_offset=None):
     '''Takes an l,m projected all sky and ffts to give a u,v plane from which
     to (re)grid from'''
-    
     num_pixel = image.shape[0]
     
-    max_u = (0.5 / l_reso)
-    u_reso = (2*max_u) / float(num_pixel)
+    u_reso = (1/l_reso) / float(num_pixel)
     u_offset = -(u_reso / 2.0)
-
+    
+    max_u = (num_pixel*u_reso) / 2.0
+    
     if num_pixel % 2 == 0:
         u_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel) - u_reso/2.0
         v_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel) - u_reso/2.0
         
-        shift_image = fft.fftshift(image)
-        #uv_data_array = fft.fft2(shift_image) #/ (image.shape[0] * image.shape[1])
-        #print('typeCPU',uv_data_array.dtype)
-        
+    else:
+        u_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
+        v_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
+    
+    shift_image = fft.fftshift(image)
+    if mode == 'CPU':
+        uv_data_array = fft.fft2(shift_image) #/ (image.shape[0] * image.shape[1])
+
+    elif mode == 'GPU':
         ##GPU CODE-------------------------------------
         cuda.init()
         context = make_default_context()
@@ -390,26 +454,18 @@ def convert_image_lm2uv(image=None,l_reso=None):
         plan.execute(gpu_data)
         uv_data_array = gpu_data.get()
         context.pop()
-        ##GPU CODE-------------------------------------
-        print('typeGPU',uv_data_array.dtype)
-        
-        uv_data_array = fft.ifftshift(uv_data_array)
-        
-        u_mesh, v_mesh = meshgrid(u_sim,v_sim)
-        print('type_mesh',u_mesh.dtype)
-        
-        ##As an even data array has l,m = 0,0 outside of a pixel, need to shift centre
-        ##of the image to account for this. An offset in l,m space is a phase change in u,v
-        ##space so apply a phase shift of half a pixel's worth to the uv_data array
-        uv_data_array *= np_exp(-2j*pi*(u_mesh*(l_reso/2.0) + v_mesh*(l_reso/2.0)))
+    ##GPU CODE-------------------------------------
     
-    else:
-        u_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
-        v_sim = linspace(-max_u-u_offset,max_u+u_offset,num_pixel)
-        
-        shift_image = fft.ifftshift(image)
-        uv_data_array = fft.fft2(shift_image) #/ (image.shape[0] * image.shape[1])
-        uv_data_array = fft.fftshift(uv_data_array)
+    uv_data_array = fft.ifftshift(uv_data_array)
+    
+    shift_image = fft.ifftshift(image)
+    uv_data_array = fft.fft2(shift_image) #/ (image.shape[0] * image.shape[1])
+    uv_data_array = fft.fftshift(uv_data_array)
+    
+    if ra_offset != None and dec_offset != None:
+    
+        u_mesh, v_mesh = meshgrid(u_sim,v_sim)
+        uv_data_array *= np_exp(-2.0j*pi*(u_mesh*-sin(ra_offset*D2R) + v_mesh*-sin(dec_offset*D2R)))
         
     return uv_data_array,u_sim,v_sim,u_reso
 
@@ -461,11 +517,12 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
     n_mesh = sqrt(1 - (l_mesh*l_mesh*n_mask + m_mesh*m_mesh*n_mask))
     #n_mesh = nan_to_num(n_mesh)
     
-    ra0,dec0 = phase_centre
-    h0 = central_lst - ra0
-    X,Y,Z = xyz_lengths
     
-    u,v,w = get_uvw(X,Y,Z,dec0,h0)
+    #ra0,dec0 = phase_centre
+    #h0 = central_lst - ra0
+    #X,Y,Z = xyz_lengths
+    
+    #u,v,w = get_uvw(X,Y,Z,dec0,h0)
     
     if kernel == 'gaussian':
         kernel_params = [2.0,2.0]
@@ -490,6 +547,9 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
         print("You haven't entered a correct degridding kernel option")
         
     if time_decor:
+        ra0,dec0 = phase_centre
+        h0 = central_lst - ra0
+        X,Y,Z = xyz_lengths
         image_time = (tdecorr_phasetrack(X=X,Y=Y,Z=Z,d0=dec0,h0=h0,l=l_mesh,m=m_mesh,n=n_mesh,time_int=time_int))
         #image_time = (tdecorr_phasetrack(X=X,Y=Y,Z=Z,d0=dec0,h0=15.0*D2R,l=l_mesh,m=m_mesh,n=n_mesh,time_int=time_int))
         ##Apply mask to image_time
@@ -499,6 +559,10 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
         image_YY *= image_time
 
     if freq_decor:
+        ra0,dec0 = phase_centre
+        h0 = central_lst - ra0
+        X,Y,Z = xyz_lengths
+        u,v,w = get_uvw(X,Y,Z,dec0,h0)
         #print('ooosh')
         image_freq = fdecorr(u=u,v=v,w=w,l=l_mesh,m=m_mesh,n=n_mesh,chan_width=freq_int*1e6,freq=freq_cent,phasetrack=True)
         ##Apply mask to image_freq

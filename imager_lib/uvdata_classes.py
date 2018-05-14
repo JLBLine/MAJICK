@@ -157,7 +157,7 @@ class UVData(object):
         self.data = None
         
 class UVContainer(object):
-    def __init__(self,uvfits_files=None,add_phase_track=False,date=False,time_res=None,phase_centre=False,load_num_times=None,load_num_freqs=None):
+    def __init__(self,uvfits_files=None,add_phase_track=False,date=False,time_res=None,phase_centre=False,load_num_times=None,load_num_freqs=None,rephase=False):
         '''An array containing UVData objects in shape = (num time steps, num freq steps'''
         ##TODO do an error check for all required uvfits files
         ##Have a custom error?
@@ -182,6 +182,7 @@ class UVContainer(object):
         self.first_date = None
         self.load_num_freqs = load_num_freqs
         self.load_num_times = load_num_times
+        self.rephase=rephase
         
         ##TODO set the 0 time step from the date of the first obs??
         for uvfits_ind,uvfits in enumerate(uvfits_files):
@@ -308,7 +309,7 @@ class UVContainer(object):
             
         time_range = arange(num_timesteps)*self.time_res
         
-        if self.add_phase_track:
+        if self.add_phase_track or self.rephase:
             ##Calculate u,v,w coords towards the new phase centre
             ##Need to calculate the LST for all time steps to do the u,v,w 
             ##calc in one go
@@ -373,7 +374,7 @@ class UVContainer(object):
             ww_scaled = ww_meters / (VELC / freq)
                 
             if self.add_phase_track:
-                ##Laborisouly phase rotate the data
+                ##Laboriously phase rotate the data
                 chan_xx_res = visi_data[:,0,0]
                 chan_xx_ims = visi_data[:,0,1]
                 chan_yy_res = visi_data[:,1,0]
@@ -404,8 +405,51 @@ class UVContainer(object):
                 visi_data[:,3,0] = rotated_yx.real
                 visi_data[:,3,1] = rotated_yx.imag
                 
+            elif self.rephase:
+                ##Laboriously phase rotate the data
+                chan_xx_res = visi_data[:,0,0]
+                chan_xx_ims = visi_data[:,0,1]
+                chan_yy_res = visi_data[:,1,0]
+                chan_yy_ims = visi_data[:,1,1]
+                chan_xy_res = visi_data[:,2,0]
+                chan_xy_ims = visi_data[:,2,1]
+                chan_yx_res = visi_data[:,3,0]
+                chan_yx_ims = visi_data[:,3,1]
+                
+                ##Make complex numpy arrays
+                comp_xx = make_complex(chan_xx_res,chan_xx_ims)
+                comp_xy = make_complex(chan_xy_res,chan_xy_ims)
+                comp_yx = make_complex(chan_yx_res,chan_yx_ims)
+                comp_yy = make_complex(chan_yy_res,chan_yy_ims)
+                
+                ##Get old phase centre w-terms
+                ww_old_scaled = HDU[0].data['WW'].copy() * freq
+                
+                if seven_len:
+                    old_ra_phase = HDU[0].header['CRVAL6']
+                    old_dec_phase = HDU[0].header['CRVAL7']
+                else:
+                    old_ra_phase = HDU[0].header['CRVAL5']
+                    old_dec_phase = HDU[0].header['CRVAL6']
+                
+                ##Add in the phase tracking
+                rotated_xx = rotate_phase(wws=ww_scaled - ww_old_scaled,visibilities=comp_xx)
+                rotated_xy = rotate_phase(wws=ww_scaled - ww_old_scaled,visibilities=comp_xy)
+                rotated_yx = rotate_phase(wws=ww_scaled - ww_old_scaled,visibilities=comp_yx)
+                rotated_yy = rotate_phase(wws=ww_scaled - ww_old_scaled,visibilities=comp_yy)
+                
+                visi_data[:,0,0] = rotated_xx.real
+                visi_data[:,0,1] = rotated_xx.imag
+                visi_data[:,1,0] = rotated_yy.real
+                visi_data[:,1,1] = rotated_yy.imag
+                visi_data[:,2,0] = rotated_xy.real
+                visi_data[:,2,1] = rotated_xy.imag
+                visi_data[:,3,0] = rotated_yx.real
+                visi_data[:,3,1] = rotated_yx.imag
+                
             for time_ind,time in zip(load_num_times,time_range[load_num_times]):
                 self.times.append(time)
+                print('LOADING TIME',time_ind,time_range[load_num_times])
                 uvdata = UVData(uvfits)
                 
                 uvdata.uu = uu_scaled[time_ind*self.num_baselines:(time_ind+1)*self.num_baselines]
