@@ -250,6 +250,9 @@ ha_point = initial_lst - initial_ra_point
 ##Flagged channel numbers
 #bad_chans = [0,1,16,30,31]
 
+good_chans = [int(options.channel_number)]
+central_freq_chan = int(options.channel_number)
+
 band_num = int(options.band_num)
 base_freq = ((band_num - 1)*(b_width/24.0)) + low_freq
 
@@ -659,9 +662,6 @@ def simulate_frequency_channel(all_args=None):
         
     ##MAKE DEGRIDDING GOOD LIKE THIS====================================================================
         
-
-good_chans = [int(options.channel_number)]
-central_freq_chan = int(options.channel_number)
 
 sim_freqs = []
 for chan in good_chans:
