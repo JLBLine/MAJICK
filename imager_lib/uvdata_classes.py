@@ -190,7 +190,7 @@ class UVContainer(object):
                 first_uvfits = True
             else:
                 first_uvfits = False
-            
+            print('LOADING UVFITS FILE %03d of %03d' %(uvfits_ind+1,len(uvfits_files)))
             self.add_data(uvfits=uvfits,first_uvfits=first_uvfits,date=self.date)
         
     def add_data(self,uvfits=None,first_uvfits=False,date=False):
@@ -294,15 +294,15 @@ class UVContainer(object):
                     self.time_res = 0.0
             else:
                 date_array = HDU[0].data['DATE']
-                time_res = round((date_array[self.num_baselines] - date_array[0])* (24.0*60.*60.),2)
+                time_res = round((date_array[self.num_baselines] - date_array[0]) * (24.0*60.*60.),2)
                 if first_uvfits:
                     self.time_res = time_res
         
         ##add on half a time resolution to find the LST
         ##at the centre of this
         
-        #central_LST = initial_LST + ((self.time_res/2.0)*(15.0/3600.0)*SOLAR2SIDEREAL)
-        central_LST = initial_LST + ((self.time_res/2.0)*(15.0/3600.0))
+        central_LST = initial_LST + ((self.time_res/2.0)*(15.0/3600.0)*SOLAR2SIDEREAL)
+        #central_LST = initial_LST 
 
         if first_uvfits:
             self.central_LST = central_LST
@@ -449,7 +449,7 @@ class UVContainer(object):
                 
             for time_ind,time in zip(load_num_times,time_range[load_num_times]):
                 self.times.append(time)
-                print('LOADING TIME',time_ind,time_range[load_num_times])
+                #print('LOADING TIME INDEX',time_ind)
                 uvdata = UVData(uvfits)
                 
                 uvdata.uu = uu_scaled[time_ind*self.num_baselines:(time_ind+1)*self.num_baselines]

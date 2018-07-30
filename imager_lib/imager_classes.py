@@ -525,6 +525,10 @@ class Imager(object):
             img_array = fft.ifft2(gridded_shift) * (self.naxis_u * self.naxis_v)
         elif self.mode == 'GPU':
             ##GPU CODE-------------------------------------
+            from pyfft.cuda import Plan
+            import pycuda.driver as cuda
+            from pycuda.tools import make_default_context
+            import pycuda.gpuarray as gpuarray
             cuda.init()
             context = make_default_context()
             stream = cuda.Stream()

@@ -494,6 +494,7 @@ def model_vis(u=None,v=None,w=None,source=None,coord_centre_ra=None,coord_centre
         ##Add in decor if asked for
         if time_decor:
             if phasetrack:
+                coord_centre_ha = LST - coord_centre_ra
                 tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=coord_centre_dec*D2R,h0=coord_centre_ha*D2R,l=l,m=m,n=n,time_int=time_res)
             else:
                 tdecor = tdecorr_nophasetrack(X=x_length,Y=y_length,dec_s=dec*D2R,ha_s=ha*D2R,t=time_res)

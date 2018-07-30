@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 import optparse
 #import matplotlib.pyplot as plt
 #from imager_lib import *
@@ -134,6 +134,9 @@ parser.add_option('--bandwidth',default=30.72,
 parser.add_option('--healpix',default=False,
     help='Enter a healpix map for degridding sims - needs to be in celestial coordinates')
 
+parser.add_option('--chips_settings', default=False, action='store_true',
+    help='Swtiches on a default CHIPS resolution and uvfits weightings - 8s, 80kHz integration with the normal 5 40kHz channels missing. OVERRIDES other time/freq int settings')
+
 options, args = parser.parse_args()
 
 if options.degrid_test:
@@ -141,7 +144,7 @@ if options.degrid_test:
 
 #freq_start = float(options.freq_start)
 #freq_res = float(options.freq_res)
-num_freq_channels = int(options.num_freqs)
+
 
 time_start = float(options.time_start)
 num_times = int(options.num_times)
@@ -188,7 +191,7 @@ if options.metafits:
     ch_width = float(f[0].header['FINECHAN'])*1e+3
     freqcent = float(f[0].header['FREQCENT'])*1e+6
     b_width = float(f[0].header['BANDWDTH'])*1e+6
-    low_freq = freqcent - (b_width/2) - (ch_width/2)
+    base_low_freq = freqcent - (b_width/2) - (ch_width/2)
 
     freq_res = ch_width / 1.0e+6
 
@@ -203,6 +206,15 @@ if options.metafits:
     initial_ra_point = f[0].header['RA']
     dec_point = f[0].header['DEC']
     
+    if options.chips_settings:
+        ch_width = 80e+3
+        time_res = 8.0
+        low_freq = base_low_freq #- (ch_width / 2.0)
+    else:
+        low_freq = base_low_freq
+        
+    num_freq_channels = int(1.28e+6 / ch_width)
+    
 else:
     initial_date = options.date
     time_res = float(options.time_res)
@@ -211,6 +223,7 @@ else:
     b_width = float(options.bandwidth)*1e+6
     low_freq = float(options.freq_start) * 1e+6
     delays = zeros((2,16))
+    num_freq_channels = int(options.num_freqs)
 
 ##TODO - make this generic, so you can use any telescope
 ##ephem Observer class, use this to compute LST from the date of the obs 
@@ -239,10 +252,16 @@ ha_point = initial_lst - initial_ra_point
 
 ##====================================================================================
 
-##Unflagged channel numbers
-good_chans = [2,3,4,5,6,7,8,9,10,11,12,13,14,15,17,18,19,20,21,22,23,24,25,26,27,28,29]
-#good_chans = xrange(32)
-central_freq_chan = 15
+##Ignores first and last channels for CHIPS settings
+if options.chips_settings:
+    good_chans = range(1,15)
+    central_freq_chan = 8
+
+else:
+    ##Unflagged channel numbers
+    good_chans = [2,3,4,5,6,7,8,9,10,11,12,13,14,15,17,18,19,20,21,22,23,24,25,26,27,28,29]
+    #good_chans = xrange(32)
+    central_freq_chan = 15
 #good_chans = xrange(32)
 #good_chans = [2]
 #central_freq_chan = 2
@@ -458,7 +477,7 @@ num_time_steps = len(time_range)
 int_jd, float_jd = calc_jdcal(initial_date)
 
 #@profile
-def simulate_frequency_channel(all_args=None):
+def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_settings=options.chips_settings,central_freq_chan=central_freq_chan):
     print 'Doing frequency', all_args[1]
     
     freq_chan_index,freq = all_args
@@ -468,7 +487,7 @@ def simulate_frequency_channel(all_args=None):
     ##Create empty data structures to save data into
     visi_data = zeros((n_data,4,3))
     
-    print 'Time range is', time_range
+    #print 'Time range is', time_range
     for time_ind,time in enumerate(time_range):
         #print 'Doing band %02d freq %.3f time %02d'  %(band_num,freq,time)
         
@@ -611,7 +630,7 @@ def simulate_frequency_channel(all_args=None):
                         
                         ##Set weights to one
                         uv_baseline[:,2] = 1.0
-            
+                        
             if options.degrid:
                 ##Due to the resolution of the GSM not all baselines will fall on the u,v
                 ##plane (u_extent = 1 / l_reso), so skip those that fail
@@ -650,12 +669,26 @@ def simulate_frequency_channel(all_args=None):
                     #uv_baseline[3,:] += array([model_yxpol.real,model_yxpol.imag,0.0000])
                     ##Set weights to one
                     uv_baseline[:,2] = 1.0
+                    
+            if chips_settings:
+                try:
+                    if good_chans.index(central_freq_chan) == freq_chan_index:
+                        ##Only 1 fine channel is averaged in central chan for
+                        ##the CHIPS settings - so divide everything by 2,
+                        ##including the weights
+                        uv_baseline /= 2
+                    
+                except ValueError:
+                    pass
+                
+                
+                
             
             visi_data[array_time_loc+baseline,:,:] = uv_baseline
             
         if options.degrid: print '%d points lie outside u,v plane so have been skipped' %outside_uv
             
-    print 'weights for sim',visi_data[:,0,2].min(),visi_data[:,0,2].max()
+    #print 'weights for sim',visi_data[:,0,2].min(),visi_data[:,0,2].max()
     savez_compressed('%s/%s_%.3f.npz' %(tmp_dir,tag_name,freq),visi_data=visi_data)
         
     ##MAKE DEGRIDDING GOOD LIKE THIS====================================================================
