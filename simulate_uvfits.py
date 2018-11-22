@@ -212,7 +212,7 @@ if options.metafits:
     if options.chips_settings:
         ch_width = 80e+3
         time_res = 8.0
-        low_freq = base_low_freq #- (ch_width / 2.0)
+        low_freq = base_low_freq - (ch_width / 2.0)
     else:
         low_freq = base_low_freq
 
