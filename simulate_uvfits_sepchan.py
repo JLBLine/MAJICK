@@ -141,7 +141,11 @@ parser.add_option('--full_chips', default=False, action='store_true',
     help='Instead of missing freq channels, do a complete simulation when doing a CHIPS simulation')
 
 parser.add_option('--sim_freq_chan',
-    help='Enter fine channel index to simulate (zero indexed)')
+    help='Enter fine channel group index to simulate (zero indexed)')
+
+
+parser.add_option('--sim_freq_groupsize',default=1,
+    help='Enter number of frequncies to simulate per process - default=1')
 
 options, args = parser.parse_args()
 
@@ -163,7 +167,7 @@ freq_decor = options.freq_decor
 over_sampled = options.over_sampled_kernel
 oversampling_factor = int(options.oversampling_factor)
 sim_freq_chan = int(options.sim_freq_chan)
-
+sim_freq_groupsize = int(options.sim_freq_groupsize)
 
 data_loc = options.data_loc
 
@@ -722,8 +726,11 @@ for chan in good_chans:
         band_freq_cent = freq
 
 
+##
 sim_freqs = array(sim_freqs)
-sim_freqs = [sim_freqs[sim_freq_chan]]
+
+##Select only the frequencies we want to simulate on this CPU
+sim_freqs = sim_freqs[sim_freq_chan*sim_freq_groupsize:(sim_freq_chan+1)*sim_freq_groupsize]
 
 ##Weight all of the
 if srclist:
@@ -735,4 +742,4 @@ if srclist:
 
 all_args_list = [[freq_ind,freq] for freq_ind,freq in enumerate(sim_freqs)]
 
-simulate_frequency_channel(all_args_list[0])
+for all_args in all_args_list: simulate_frequency_channel(all_args)
