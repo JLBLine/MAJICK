@@ -71,8 +71,8 @@ parser.add_option('-l', '--multi_process', default=False,
 parser.add_option('-m', '--num_times',
     help='Enter number of times steps to simulate')
 
-parser.add_option('-n', '--num_freqs',default=32,
-    help='Enter number of frequency channels per band to simulate - set to usual 32 for MWA')
+parser.add_option('-n', '--num_freqs',default=False,
+    help='Enter number of frequency channels per band to simulate - defaults to only simulate channels that are not flagged so 27 fine chans in total')
 
 parser.add_option('-o', '--no_wproj',default=True,action='store_false',
     help='Add to switch off w-projection')
@@ -255,27 +255,23 @@ ha_point = initial_lst - initial_ra_point
 
 ##====================================================================================
 
-if options.num_freqs:
+if options.chips_settings:
+    if options.full_chips:
+        good_chans = range(0,16)
+    ##Ignores first and last channels for CHIPS settings
+    else:
+        good_chans = range(1,15)
+    central_freq_chan = 8
+
+elif options.num_freqs:
     good_chans = arange(int(options.num_freqs))
     central_freq_chan = 0
 
 else:
-    ##Ignores first and last channels for CHIPS settings
-    if options.chips_settings:
-        if options.full_chips:
-            good_chans = range(0,16)
-        else:
-            good_chans = range(1,15)
-        central_freq_chan = 8
-
-    else:
-        ##Unflagged channel numbers
-        good_chans = [2,3,4,5,6,7,8,9,10,11,12,13,14,15,17,18,19,20,21,22,23,24,25,26,27,28,29]
-        #good_chans = xrange(32)
-        central_freq_chan = 15
+    ##Unflagged channel numbers
+    good_chans = [2,3,4,5,6,7,8,9,10,11,12,13,14,15,17,18,19,20,21,22,23,24,25,26,27,28,29]
     #good_chans = xrange(32)
-    good_chans = [2]
-    central_freq_chan = 2
+    central_freq_chan = 15
 
 ##Flagged channel numbers
 #bad_chans = [0,1,16,30,31]
