@@ -472,7 +472,9 @@ if options.healpix:
     for keyword,value in healpix_header:
         if keyword == 'NSIDE':
             nside = value
-
+else:
+    healpix_array = False
+    nside = False
 
 time_range = time_start + arange(num_times)*time_res
 num_time_steps = len(time_range)
@@ -482,7 +484,7 @@ num_time_steps = len(time_range)
 int_jd, float_jd = calc_jdcal(initial_date)
 
 #@profile
-def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_settings=options.chips_settings,central_freq_chan=central_freq_chan):
+def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_settings=options.chips_settings,central_freq_chan=central_freq_chan,healpix_array=healpix_array,nside=nside):
     print 'Doing frequency', all_args[1]
 
     freq_chan_index,freq = all_args

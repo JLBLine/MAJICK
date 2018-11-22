@@ -3,11 +3,11 @@ import numpy as np
 import optparse, sys, os
 import healpy as hp
 
-import matplotlib
-##Protects clusters where no $DISPLAY is set when running PBS/SLURM
-# Force matplotlib to not use any Xwindows backend.
-matplotlib.use('Agg')
-from matplotlib.pyplot import close
+# import matplotlib
+# ##Protects clusters where no $DISPLAY is set when running PBS/SLURM
+# # Force matplotlib to not use any Xwindows backend.
+# matplotlib.use('Agg')
+# from matplotlib.pyplot import close
 from os import environ
 
 MAJICK_DIR = environ['MAJICK_DIR']
@@ -33,16 +33,16 @@ def K_RJ2MJysr(K_RJ, nu):#in Kelvin and Hz
 def generate_gsm_2016(freq=None,this_date=None,observer=None,xsize=225):
     '''Generates an orthographic view of the 2016 GSM for a given
     observer, for a given date, and given frequency (MHz)'''
-    
+
     freq *= 1e-9
-    
+
     ##This is directly lifted from github code - dunno what it's doing!
     nside = 1024
     if freq < 1000:
         op_resolution = 48
     else:
         op_resolution = 24
-        
+
     map_ni = np.array([np.fromfile('%s/imager_lib/gsm_2016_data/highres_%s_map.bin' %(MAJICK_DIR,lb), dtype='float32') for lb in labels])
     spec_nf = np.loadtxt('%s/imager_lib/gsm_2016_data/spectra.txt' %MAJICK_DIR)
     nfreq = spec_nf.shape[1]
@@ -54,8 +54,8 @@ def generate_gsm_2016(freq=None,this_date=None,observer=None,xsize=225):
             break
     if left_index < 0:
         print "FREQUENCY ERROR: %.2e GHz is outside supported frequency range of %.2e GHz to %.2e GHz."%(freq, spec_nf[0, 0], spec_nf[0, -1])
-        
-        
+
+
     interp_spec_nf = np.copy(spec_nf)
     interp_spec_nf[0:2] = np.log10(interp_spec_nf[0:2])
     x1 = interp_spec_nf[0, left_index]
@@ -65,7 +65,7 @@ def generate_gsm_2016(freq=None,this_date=None,observer=None,xsize=225):
     x = np.log10(freq)
     interpolated_vals = (x * (y2 - y1) + x2 * y1 - x1 * y2) / (x2 - x1)
     result = np.sum(10.**interpolated_vals[0] * (interpolated_vals[1:, None] * map_ni), axis=0)
-    
+
     ##Put into healpix ring order, works with the orthographic projection
     result = hp.reorder(result, n2r=True)
 
@@ -92,6 +92,8 @@ def generate_gsm_2016(freq=None,this_date=None,observer=None,xsize=225):
     pix0 = hp.ang2pix(n_side, g0, g1)
     sky_rotated = result[pix0]
 
+    # sky_rotated = result
+
     ## Generate a mask for below horizon
     #mask1 = phi + np.pi / 2 > 2 * np.pi
     #mask2 = phi < np.pi / 2
@@ -113,21 +115,21 @@ def generate_gsm_2016(freq=None,this_date=None,observer=None,xsize=225):
     ### * 1e+6 because in MJy - then need to convert from sterrad**-1 to pixel**-1
     ### the observers sky covers 2pi sterrads
     ### there are pi*(d/2)**2 pixels in sky, where d is width of image
-    
+
     #sky_view = np.array(sky_view.filled()) * 1e+6 * ((2*np.pi) / (np.pi * (float(sky_view.shape[0])/2.0)**2))
-    
+
     #sky_view[sky_view == -np.inf] = 0
     #sky_view = sky_view[:,::-1]
-    
-    
-    
+
+
+
     #return sky_view, l_reso
-    
+
     #Need to convert from sterrad**-1 to pixel**-1
     pixel_area = hp.nside2pixarea(nside)
     sky_rotated *= pixel_area
-    
+
     ##Then convert from MJy to Jy
     sky_rotated *= 1e+6
-    
+
     return nside,sky_rotated
