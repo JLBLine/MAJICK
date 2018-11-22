@@ -137,6 +137,9 @@ parser.add_option('--healpix',default=False,
 parser.add_option('--chips_settings', default=False, action='store_true',
     help='Swtiches on a default CHIPS resolution and uvfits weightings - 8s, 80kHz integration with the normal 5 40kHz channels missing. OVERRIDES other time/freq int settings')
 
+parser.add_option('--full_chips', default=False, action='store_true',
+    help='Instead of missing freq channels, do a complete simulation when doing a CHIPS simulation')
+
 options, args = parser.parse_args()
 
 if options.degrid_test:
@@ -259,7 +262,10 @@ if options.num_freqs:
 else:
     ##Ignores first and last channels for CHIPS settings
     if options.chips_settings:
-        good_chans = range(1,15)
+        if options.full_chips:
+            good_chans = range(0,16)
+        else:
+            good_chans = range(1,15)
         central_freq_chan = 8
 
     else:
@@ -678,15 +684,18 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
                     uv_baseline[:,2] = 1.0
 
             if chips_settings:
-                try:
-                    if good_chans.index(central_freq_chan) == freq_chan_index:
-                        ##Only 1 fine channel is averaged in central chan for
-                        ##the CHIPS settings - so divide everything by 2,
-                        ##including the weights
-                        uv_baseline /= 2
-
-                except ValueError:
+                if options.full_chips:
                     pass
+                else:
+                    try:
+                        if good_chans.index(central_freq_chan) == freq_chan_index:
+                            ##Only 1 fine channel is averaged in central chan for
+                            ##the CHIPS settings - so divide everything by 2,
+                            ##including the weights
+                            uv_baseline /= 2
+
+                    except ValueError:
+                        pass
 
 
 
