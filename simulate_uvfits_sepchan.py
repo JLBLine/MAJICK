@@ -143,9 +143,11 @@ parser.add_option('--full_chips', default=False, action='store_true',
 parser.add_option('--sim_freq_chan',
     help='Enter fine channel group index to simulate (zero indexed)')
 
-
 parser.add_option('--sim_freq_groupsize',default=1,
     help='Enter number of frequncies to simulate per process - default=1')
+
+parser.add_option('--noise_healpix',default=False,action='store_true',
+    help='Add to do a pure noise sky degrid simulation')
 
 options, args = parser.parse_args()
 
@@ -573,6 +575,22 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
                 ##throws a wobbly if we don't
                 uv_data_array, u_sim, v_sim, u_reso = uv_data_array_test, u_sim_test, v_sim_test, u_reso_test
                 l_reso = l_reso_test
+
+            elif options.noise_healpix:
+
+                random.seed(int(freq))
+                nside = 512
+                healpix_array = random.normal(0,2,hp.nside2npix(nside))
+
+                #max_uv = 1000
+                image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=max_uv)
+                print 'Done - now FTing to get uvplane'
+
+                ra_off, dec_off = find_healpix_zenith_offset(nside=nside,observer=MRO)
+                ra_off, dec_off = None, None
+
+                uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso,ra_offset=ra_off,dec_offset=dec_off)
+                print 'Done'
 
             ##Take a healpix full sky map, rotate to observers frame, convert to u,v
             elif options.healpix:
