@@ -360,12 +360,13 @@ int_jd, float_jd = calc_jdcal(initial_date)
 sim_freqs = []
 for chan in good_chans:
     ##Take the band base_freq and add on fine channel freq
-    freq = base_freq + (chan*ch_width)
+    freq = base_freq + (chan*ch_width)+ (ch_width / 2.0)
+    freq_cent = freq + (ch_width / 2.0)
     sim_freqs.append(freq)
 
     ##Set the band central frequency
     if chan == central_freq_chan:
-        band_freq_cent = freq
+        band_freq_cent = freq_cent
 
 
 sim_freqs = array(sim_freqs)
