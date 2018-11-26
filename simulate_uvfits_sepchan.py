@@ -134,6 +134,9 @@ parser.add_option('--bandwidth',default=30.72,
 parser.add_option('--healpix',default=False,
     help='Enter a healpix map for degridding sims - needs to be in celestial coordinates')
 
+parser.add_option('--healpix_prepend',default=False,
+    help='Enter to use a range of healpix maps, one for each fine channel. Name of files must end in%%.3fHMz.fits')
+
 parser.add_option('--chips_settings', default=False, action='store_true',
     help='Swtiches on a default CHIPS resolution and uvfits weightings - 8s, 80kHz integration with the normal 5 40kHz channels missing. OVERRIDES other time/freq int settings')
 
@@ -148,6 +151,9 @@ parser.add_option('--sim_freq_groupsize',default=1,
 
 parser.add_option('--noise_healpix',default=False,action='store_true',
     help='Add to do a pure noise sky degrid simulation')
+
+parser.add_option('--healpix_units',default='Jy',
+    help='Enter healpix units - defaults to Jy. Accepts Jy, K or mK (Jansky, Kelvin or milliKelvin)')
 
 options, args = parser.parse_args()
 
@@ -583,7 +589,7 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
                 healpix_array = random.normal(0,2,hp.nside2npix(nside))
 
                 #max_uv = 1000
-                image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=max_uv)
+                image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=max_uv,unit=options.healpix_units,freq=freq_cent)
                 print 'Done - now FTing to get uvplane'
 
                 ra_off, dec_off = find_healpix_zenith_offset(nside=nside,observer=MRO)
@@ -593,15 +599,21 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
                 print 'Done'
 
             ##Take a healpix full sky map, rotate to observers frame, convert to u,v
-            elif options.healpix:
+            elif options.healpix or options.healpix_prepend:
                 print initial_date,time
                 date = add_time_uvfits(initial_date,time)
                 e_date,e_time = date.split('T')
                 MRO.date = '/'.join(e_date.split('-'))+' '+e_time
-                print 'Converting healpix to l,m for time',date,
+
+                if options.healpix_prepend:
+                    healpix_array,healpix_header = hp.read_map(options.healpix_prepend + '%.3fMHz.fits' %(freq/1e+6) ,h=True)
+                    for keyword,value in healpix_header:
+                        if keyword == 'NSIDE':
+                            nside = value
+                print('Converting healpix to l,m for time',date)
 
                 #max_uv = 1000
-                image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=max_uv)
+                image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=max_uv,unit=options.healpix_units,freq=freq_cent)
                 print 'Done - now FTing to get uvplane'
 
                 ra_off, dec_off = find_healpix_zenith_offset(nside=nside,observer=MRO)
@@ -619,7 +631,7 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
                 print 'Converting healpix to l,m for time',date,
                 nside,healpix_array = generate_gsm_2016(freq=freq_cent,this_date=date,observer=MRO)
                 #max_uv = 1000
-                image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=max_uv)
+                image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=max_uv,unit=options.healpix_units,freq=freq_cent)
                 print 'Done - now FTing to get uvplane'
 
                 ra_off, dec_off = find_healpix_zenith_offset(nside=nside,observer=MRO)

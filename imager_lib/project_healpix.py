@@ -13,14 +13,31 @@ with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: o
     D2R, R2D, VELC, MWA_LAT, KERNEL_SIZE, W_E, SOLAR2SIDEREAL = pickle.load(f)
 
 
-def convert_healpix2lm(healpix_array=None,observer=None,max_uv=None,rotate=False):
+def convert_healpix2lm(healpix_array=None,observer=None,max_uv=None,rotate=False,unit='Jy',freq=None):
     '''Takes a healpix array which is in celestial coords and an ephem observer
     (which should alread have the correct date within) and spits out an all sky
     image of the observer's sky, with a resolution such that the maximum uv point
     can be sampled upon an FT of the image'''
 
-    n_side = hp.npix2nside(len(healpix_array))
-    theta, phi = hp.pix2ang(n_side, arange(len(healpix_array)))
+    k_B = 1.38064852e-23
+    VELC = 299792458.
+
+    nside = hp.get_nside(healpix_array)
+
+    if unit == 'Jy':
+        pass
+    else:
+        solid_angle = hp.nside2pixarea(nside)
+        wavelen = VELC / freq
+        ##10e-26 because Jy
+        healpix_array = (2*float(k_B)*healpix_array*solid_angle) / (wavelen**2*10e-26)
+
+        if unit == 'K':
+            pass
+        elif unit == 'mK':
+            healpix_array *= 1e-3
+
+    theta, phi = hp.pix2ang(nside, arange(len(healpix_array)))
 
     # Get RA and DEC of zenith
     ra_rad, dec_rad = observer.radec_of(0, pi/2)
@@ -72,7 +89,7 @@ def convert_healpix2lm(healpix_array=None,observer=None,max_uv=None,rotate=False
     sky_view = sky_view[::-1,:]
 
 
-    solid_angle_healpix = hp.nside2pixarea(n_side)
+    solid_angle_healpix = hp.nside2pixarea(nside)
     soild_angle_projection = arcsin(l_reso)**2
     # print(solid_angle_healpix,soild_angle_projection)
 
