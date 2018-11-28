@@ -31,6 +31,8 @@ try:
 except:
     pass
 
+from copy import deepcopy
+
 
 MAJICK_DIR = environ['MAJICK_DIR']
 with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
@@ -532,19 +534,11 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
         image_XX = image_gaussian(kernel_sig_x=sig_x,kernel_sig_y=sig_y,l_mesh=l_mesh,m_mesh=m_mesh,cell_reso=u_reso)
         image_YY = image_XX
 
-    elif kernel == 'MWA_phase1':
-        beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,kernel)
+    # else:
+    #     print("You haven't entered a correct degridding kernel option")
 
-        if fix_beam:
-            ##We have already passed image_XX, image_YY as an argument if using fix_beam
-            pass
-            ##If using CHIPS in fix beam mode, set to 186.235MHz (+0.02 for half channel width)
-        else:
-            image_XX = my_loadtxt('%s/beam_%s_%.3f_XX.txt' %(beam_loc,delay_str,freq_cent))
-            image_YY = my_loadtxt('%s/beam_%s_%.3f_YY.txt' %(beam_loc,delay_str,freq_cent))
-
-    else:
-        print("You haven't entered a correct degridding kernel option")
+    this_XX = deepcopy(image_XX)
+    this_YY = deepcopy(image_YY)
 
     if time_decor:
         ra0,dec0 = phase_centre
@@ -555,8 +549,8 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
         ##Apply mask to image_time
         image_time *= n_mask
 
-        image_XX *= image_time
-        image_YY *= image_time
+        this_XX *= image_time
+        this_YY *= image_time
 
     if freq_decor:
         ra0,dec0 = phase_centre
@@ -568,8 +562,8 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
         ##Apply mask to image_freq
         image_freq *= n_mask
 
-        image_XX *= image_freq
-        image_YY *= image_freq
+        this_XX *= image_freq
+        this_YY *= image_freq
 
     if over_sampled:
         ##Find closest u,v point in the oversample kernel that matches the offset from our grid point
@@ -611,8 +605,8 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
             wproj_image = wprojection(w=w,n=n_mesh)
             wproj_image *= n_mask
 
-            image_XX = wproj_image * image_XX.astype(complex)
-            image_YY = wproj_image * image_YY.astype(complex)
+            this_XX = wproj_image * this_XX.astype(complex)
+            this_YY = wproj_image * this_YY.astype(complex)
         else:
             pass
 

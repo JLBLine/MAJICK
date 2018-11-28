@@ -513,6 +513,19 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
     ##Create empty data structures to save data into
     visi_data = zeros((n_data,4,3))
 
+    ##Only need to load the beam base kernal once
+
+    if beam == True:
+        if options.fix_beam:
+            ##We have already passed image_XX, image_YY as an argument if using fix_beam
+            pass
+            ##If using CHIPS in fix beam mode, set to 186.235MHz (+0.02 for half channel width)
+        else:
+            print('CALLING THE BEAM KERNELS NOW',freq_cent/1e+6)
+            beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,options.telescope)
+            image_XX = my_loadtxt('%s/beam_%s_%.3f_XX.txt' %(beam_loc,delay_str,freq_cent))
+            image_YY = my_loadtxt('%s/beam_%s_%.3f_YY.txt' %(beam_loc,delay_str,freq_cent))
+
     #print 'Time range is', time_range
     for time_ind,time in enumerate(time_range):
         #print 'Doing band %02d freq %.3f time %02d'  %(band_num,freq,time)
