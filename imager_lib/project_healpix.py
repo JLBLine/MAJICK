@@ -48,7 +48,7 @@ def convert_healpix2lm(healpix_array=None,observer=None,max_uv=None,rotate=False
     if rotate == True:
         hrot = hp.Rotator(rot=[ra_deg, dec_deg], inv=True)
         g0, g1 = hrot(theta, phi)
-        pix0 = hp.ang2pix(n_side, g0, g1)
+        pix0 = hp.ang2pix(nside, g0, g1)
         observed_sky = healpix_array[pix0]
         norm = healpix_array.sum() / observed_sky.sum()
         observed_sky *= norm
