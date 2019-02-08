@@ -134,6 +134,12 @@ parser.add_option('--bandwidth',default=30.72,
 parser.add_option('--healpix',default=False,
     help='Enter a healpix map for degridding sims - needs to be in celestial coordinates')
 
+parser.add_option('--healpix_units',default='Jy',
+    help='Enter healpix units - defaults to Jy. Accepts Jy, K or mK (Jansky, Kelvin or milliKelvin)')
+
+parser.add_option('--healpix_prepend',default=False,
+    help='Enter to use a range of healpix maps, one for each fine channel. Name of files must end in%%.3fHMz.fits')
+
 parser.add_option('--chips_settings', default=False, action='store_true',
     help='Swtiches on a default CHIPS resolution and uvfits weightings - 8s, 80kHz integration with the normal 5 40kHz channels missing. OVERRIDES other time/freq int settings')
 
@@ -161,6 +167,7 @@ over_sampled = options.over_sampled_kernel
 oversampling_factor = int(options.oversampling_factor)
 
 data_loc = options.data_loc
+healpix_units = options.healpix_units
 
 if options.no_beam:
     beam = False
@@ -246,6 +253,8 @@ else:
     dec_point = MWA_LAT
 
 ha_point = initial_lst - initial_ra_point
+
+
 
 ##delays = zeros((2,16))
 ##ha_point = 0.0
@@ -382,7 +391,10 @@ if options.degrid:
     ##If using fix_beam, don't need to load beam images multiple times:
     ##big saving computationally
     if options.fix_beam:
-        beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,options.telescope)
+        if 'MWA' in options.telescope:
+            beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,'MWA_phase1')
+        else:
+            beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,options.telescope)
         ##If using CHIPS in fix beam mode, set to 186.235MHz (+0.02 for half channel width)
         image_XX = my_loadtxt('%s/beam_%s_186255000.000_XX.txt' %(beam_loc,delay_str))
         image_YY = my_loadtxt('%s/beam_%s_186255000.000_YY.txt' %(beam_loc,delay_str))
@@ -392,7 +404,10 @@ if options.degrid:
 
 if over_sampled:
     #print 'Begun creating oversampled kernel'
-    beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,options.telescope)
+    if 'MWA' in options.telescope:
+        beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,'MWA_phase1')
+    else:
+        beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,options.telescope)
     ##If using CHIPS in fix beam mode, set to 186.235MHz (+0.02 for half channel width)
     image_XX = my_loadtxt('%s/beam_%s_186255000.000_XX.txt' %(beam_loc,delay_str))
     image_YY = my_loadtxt('%s/beam_%s_186255000.000_YY.txt' %(beam_loc,delay_str))
@@ -566,22 +581,28 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
                 l_reso = l_reso_test
 
             ##Take a healpix full sky map, rotate to observers frame, convert to u,v
-            elif options.healpix:
+            elif options.healpix or options.healpix_prepend:
                 print initial_date,time
                 date = add_time_uvfits(initial_date,time)
                 e_date,e_time = date.split('T')
                 MRO.date = '/'.join(e_date.split('-'))+' '+e_time
-                print 'Converting healpix to l,m for time',date,
+
+                if options.healpix_prepend:
+                    healpix_array,healpix_header = hp.read_map(options.healpix_prepend + '%.3fMHz.fits' %(freq/1e+6) ,h=True)
+                    for keyword,value in healpix_header:
+                        if keyword == 'NSIDE':
+                            nside = value
+                print('Converting healpix to l,m for time',date)
 
                 #max_uv = 1000
-                image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=max_uv)
-                print 'Done - now FTing to get uvplane'
+                image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=max_uv,rotate=True,unit=options.healpix_units)
+                print('Done - now FTing to get uvplane')
 
                 ra_off, dec_off = find_healpix_zenith_offset(nside=nside,observer=MRO)
                 ra_off, dec_off = None, None
 
                 uv_data_array, u_sim, v_sim, u_reso = convert_image_lm2uv(image=image,l_reso=l_reso,ra_offset=ra_off,dec_offset=dec_off)
-                print 'Done'
+                print('Done')
 
             ##Otherwise, generate a diffuse sky image using the GSM, and FT to uv-space
             else:

@@ -8,7 +8,7 @@ except ImportError:
     ##Old MWA_tools version
     from mwapy.pb import primary_beam,beam_full_EE,mwa_tile
 #from mwapy.pb import mwa_tile
-from numpy import pi,cos,sin,array,repeat,reshape,sqrt,dot,ones,real,imag,arctan2,zeros,conjugate,linalg,transpose,matrix,identity,arccos,log,argmin,swapaxes
+from numpy import pi,cos,sin,array,repeat,reshape,sqrt,dot,ones,real,imag,arctan2,zeros,conjugate,linalg,transpose,matrix,identity,arccos,log,argmin,swapaxes,load
 from cmath import exp
 from uvdata_classes import *
 from gridding_functions import *
@@ -29,14 +29,15 @@ with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: o
 
 beam_freqs = arange(49920000,327680000+1.28e6,1.28e+6)
 
-##RTS shapelet settings
-sbf_L = 2001
-sbf_c = 1000
-sbf_N  = 31
+##Basis shapelet settings
+sbf_L = 3001
+sbf_c = 1500
+sbf_N  = 61
 sbf_dx = 0.01
 
 MWAPY_H5PATH = MAJICK_DIR + "/telescopes/MWA_phase1/mwa_full_embedded_element_pattern.h5"
-sbf = loadtxt('%s/imager_lib/shapelet_basis.txt' %MAJICK_DIR)
+# sbf = loadtxt('%s/imager_lib/shapelet_basis.txt' %MAJICK_DIR)
+sbf = load('%s/imager_lib/shape_basis_values.npz' %MAJICK_DIR)['basis_array']
 
 class Component_Info():
     def __init__(self):
@@ -88,9 +89,11 @@ def create_calibrator(cali_info=None,num_times=None):
     lines = cali_info.split('\n')
     lines = [line for line in lines if line!='']
     ##If there are components to the source, see where the components start and end
-    comp_starts = [lines.index(line) for line in lines if 'COMPONENT' in line and 'END' not in line]
+    comp_starts = [i for i in xrange(len(lines)) if 'COMPONENT' in lines[i] and 'END' not in lines[i]]
+    # comp_starts = where(array(comp_starts) == 'COMPONENT')
     comp_ends = [i for i in xrange(len(lines)) if lines[i]=='ENDCOMPONENT']
-
+    # comp_starts = where(array(comp_starts) == 'ENDCOMPONENT')
+    # savez_compressed('wft.npz',starts=array(comp_starts),ends=array(comp_ends))
     primary_comp = Component_Info()
     primary_comp.comp_type = 'POINT'
     ##Check to see if the primary source is a gaussian or shapelet
@@ -123,14 +126,16 @@ def create_calibrator(cali_info=None,num_times=None):
     source.component_infos.append(primary_comp)
     ##For each component, go through and find ra,dec,freqs and fluxs
     ##Also check here if the component is a gaussian or shapelet
+    done_this = 0
     for start,end in zip(comp_starts,comp_ends):
         freqs = []
         fluxs = []
         coeffs = []
+        comp = Component_Info()
+        comp.comp_type = 'POINT'
         for line in lines[start:end]:
-            comp = Component_Info()
-
-            if 'COMPONENT' in line:
+            if 'COMPONENT' in line: #and 'END' not in line:
+                done_this += 1
                 source.ras.append(float(line.split()[1])*15.0)
                 source.decs.append(float(line.split()[2]))
             if 'FREQ' in line:
@@ -144,15 +149,14 @@ def create_calibrator(cali_info=None,num_times=None):
                 comp.pa = float(pa) * (pi/180.0)
                 comp.major = float(major) * (pi/180.0) * (1 / 60.0)
                 comp.minor = float(minor) * (pi/180.0) * (1 / 60.0)
-            elif 'SHAPELET' in line:
+            if 'SHAPELET' in line:
+                print('HERE')
                 comp.comp_type = 'SHAPELET'
                 meh,pa,major,minor = line.split()
                 ##convert all to radians
                 comp.pa = float(pa) * (pi/180.0)
                 comp.major = float(major) * (pi/180.0) * (1 / 60.0)
                 comp.minor = float(minor) * (pi/180.0) * (1 / 60.0)
-            else:
-                comp.comp_type = 'POINT'
 
             if 'COEFF' in line:
                 meh,n1,n2,n3 = line.split()
@@ -460,11 +464,13 @@ def calc_visi_envelope(pa=None,major=None,minor=None,shapelet_coeffs=None,comp_t
     cospa = cos(pa)
 
     if comp_type == 'GAUSSIAN':
-        const_x = -0.5 * major * major ## -1/(2*sigma^2)
-        const_y = -0.5 * minor * minor
+        # factor = pi**2 / (2*log(2))
+        factor = 1
+        const_x = -0.5 * major * major * factor ## -1/(2*sigma^2)
+        const_y = -0.5 * minor * minor * factor
 
         x = (cospa*v_s + sinpa*u_s) ## major axis
-        y = (-sinpa*v_s + cospa*u_s) ## minor axis
+        y = -(-sinpa*v_s + cospa*u_s) ## minor axis
 
         V_envelope_RTS = exp( x*x*const_x + y*y*const_y )
 
@@ -479,11 +485,16 @@ def calc_visi_envelope(pa=None,major=None,minor=None,shapelet_coeffs=None,comp_t
         # majick_basis = []
         # majick_visi_env = []
 
+        factor = sqrt(pi**2 / (2*log(2)))
+        # factor = 2*sqrt(2*log(2))
 
-        const_x = (2*pi*major)/sbf_dx ## 2*pi/sigma / sbf_dx (scale to beta=1, then into the units of the stored basis fns)
-        const_y = (2*pi*minor)/sbf_dx ## 2*pi/sigma / sbf_dx (scale to beta=1, then into the units of the stored basis fns)
+
+        const_x = (major*factor)/sbf_dx ## 2*pi/sigma / sbf_dx (scale to beta=1, then into the units of the stored basis fns)
+        const_y = (minor*factor)/sbf_dx ## 2*pi/sigma / sbf_dx (scale to beta=1, then into the units of the stored basis fns)
         #checking this
-        const_scale =  1.0 / ( 2*pi * sqrt(major * minor) )
+        # const_scale =  1.0 / ( 2*pi * sqrt(major * minor) )
+
+        # const_scale = 1 / sqrt(major * minor)
 
         #// I^(n1+n2) = Ipow_lookup[(n1+n2) % 4]
         #// presumably Ipow_lookup[(n1+n2) % 4] is faster than cpowf( I, (float complex)(n1+n2) )
@@ -530,9 +541,9 @@ def calc_visi_envelope(pa=None,major=None,minor=None,shapelet_coeffs=None,comp_t
             for coeff in xrange(n_coeffs):
 
                 ##do linear interpolation of the basis functions.
-                ylow  = sbf_n1[coeff][xindex]
-                yhigh = sbf_n1[coeff][xindex+1]
-                u_value = ylow + (yhigh-ylow)*(xpos-xindex)
+                xlow  = sbf_n1[coeff][xindex]
+                xhigh = sbf_n1[coeff][xindex+1]
+                u_value = xlow + (xhigh-xlow)*(xpos-xindex)
 
                 ylow  = sbf_n2[coeff][yindex]
                 yhigh = sbf_n2[coeff][yindex+1]
@@ -542,6 +553,11 @@ def calc_visi_envelope(pa=None,major=None,minor=None,shapelet_coeffs=None,comp_t
                 V_envelope_RTS += f_hat[coeff] * u_value*v_value
 
         ## checking this
+
+        # const_scale =  1.0 / ( 2*pi * sqrt(major * minor) )
+        # const_scale =  sqrt(pi)
+        const_scale = 1
+
         V_envelope_RTS *= const_scale
 
         # const_x = (2*pi*major) #/sbf_dx
@@ -659,10 +675,16 @@ def model_vis(u=None,v=None,w=None,source=None,coord_centre_ra=None,coord_centre
             this_vis *= visi_envelope
         elif comp.comp_type == 'SHAPELET':
             # u_s,v_s,w_s = get_uvw(x_length,y_length,z_length,source.decs[i]*D2R,(LST - source.ras[i])*D2R)
-            u_s,v_s,w_s = get_uvw_freq(x_length=x_length,y_length=y_length,z_length=z_length,dec=source.decs[i]*D2R,ha=(LST - source.ras[i])*D2R,freq=freqcent)
 
+            # print(LST,source.ras[i])
+            if phasetrack:
+                u_s,v_s,w_s = get_uvw_freq(x_length=x_length,y_length=y_length,z_length=z_length,dec=source.decs[i]*D2R,ha=(LST - source.ras[i])*D2R,freq=freqcent)
+            else:
+                #u_s,v_s = u,v
+                # u_s,v_s,w_s = get_uvw_freq(x_length=x_length,y_length=y_length,z_length=z_length,dec=coord_centre_dec*D2R,ha=0.0,freq=freqcent)
+                u_s,v_s,w_s = get_uvw_freq(x_length=x_length,y_length=y_length,z_length=z_length,dec=source.decs[i]*D2R,ha=(LST - source.ras[i])*D2R,freq=freqcent)
+            # this_vis *= exp(PhaseConst*(w))
 
-            # u_s,v_s = u,v
             visi_envelope = calc_visi_envelope(pa=comp.pa,major=comp.major,minor=comp.minor,shapelet_coeffs=comp.shapelet_coeffs,comp_type='SHAPELET',u_s=u_s,v_s=v_s)
             this_vis *= visi_envelope
 
