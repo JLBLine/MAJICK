@@ -30,8 +30,8 @@ with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: o
 beam_freqs = arange(49920000,327680000+1.28e6,1.28e+6)
 
 ##Basis shapelet settings
-sbf_L = 3001
-sbf_c = 1500
+sbf_L = 5001
+sbf_c = 2500
 sbf_N  = 61
 sbf_dx = 0.01
 
@@ -65,7 +65,7 @@ def create_calibrator(cali_info=None,num_times=None):
 
     primary_info = cali_info.split('COMPONENT')[0].split('\n')
     #print('primary_info', primary_info)
-    primary_info = [info for info in primary_info if info!='']
+    primary_info = [info for info in primary_info if info!='' and '#' not in info]
     #print('primary_info', primary_info)
     meh,prim_name,prim_ra,prim_dec = primary_info[0].split()
     #print('meh,prim_name,prim_ra,prim_dec',meh,prim_name,prim_ra,prim_dec)
@@ -87,7 +87,7 @@ def create_calibrator(cali_info=None,num_times=None):
 
     ##Split all info into lines and get rid of blank entries
     lines = cali_info.split('\n')
-    lines = [line for line in lines if line!='']
+    lines = [line for line in lines if line!='' and '#' not in line]
     ##If there are components to the source, see where the components start and end
     comp_starts = [i for i in xrange(len(lines)) if 'COMPONENT' in lines[i] and 'END' not in lines[i]]
     # comp_starts = where(array(comp_starts) == 'COMPONENT')
@@ -400,6 +400,7 @@ def extrapolate_and_cal_beam(sources=None,initial_lst=None,delays=None,beam=True
 
         for name,source in sources.iteritems():
             ha_prim = lst - source.ras[0]
+            print(ha_prim,source.decs[0])
             Az_prim,Alt_prim = eq2horz(ha_prim,source.decs[0],MWA_LAT)
             if Alt_prim < 0.0:
                 source.skip.append(True)
@@ -427,7 +428,6 @@ def extrapolate_and_cal_beam(sources=None,initial_lst=None,delays=None,beam=True
             sample_freq = 186.255e+6
         else:
             sample_freq = freqcent
-
         interp_beam_points_XX,interp_beam_points_XY,interp_beam_points_YX,interp_beam_points_YY = interpolate_beam(sample_freq=sample_freq,
                 delays=delays,za=za,az=az,interp_freqs=sim_freqs)
 
@@ -551,6 +551,8 @@ def calc_visi_envelope(pa=None,major=None,minor=None,shapelet_coeffs=None,comp_t
 
                 ##accumulate the intensity model for baseline pair (u,v)
                 V_envelope_RTS += f_hat[coeff] * u_value*v_value
+        else:
+            print('Baseline length is greater than stored basis functions',u_s,v_s,xindex,yindex)
 
         ## checking this
 
@@ -617,6 +619,8 @@ def model_vis(u=None,v=None,w=None,source=None,coord_centre_ra=None,coord_centre
     sign = 1
     PhaseConst = 1j * 2 * pi * sign
 
+    wavelength = VELC / freqcent
+
     ##For each component in the source
     for i in xrange(len(source.ras)):
         ra,dec = source.ras[i],source.decs[i]
@@ -644,6 +648,7 @@ def model_vis(u=None,v=None,w=None,source=None,coord_centre_ra=None,coord_centre
 
         ##TODO - l,m,n should be constant if phasetracking - pull out of loop somehow?
         l,m,n = get_lm(ra*D2R, coord_centre_ra*D2R, dec*D2R, coord_centre_dec*D2R)
+        # print(l,m,n)
         if phasetrack:
             this_vis = ext_flux * exp(PhaseConst*(u*l + v*m + w*(n-1)))
         else:
@@ -653,9 +658,17 @@ def model_vis(u=None,v=None,w=None,source=None,coord_centre_ra=None,coord_centre
         if time_decor:
             if phasetrack:
                 coord_centre_ha = LST - coord_centre_ra
-                tdecor = tdecorr_phasetrack(X=x_length,Y=y_length,Z=z_length,d0=coord_centre_dec*D2R,h0=coord_centre_ha*D2R,l=l,m=m,n=n,time_int=time_res)
+                tdecor = tdecorr_phasetrack(X=x_length/wavelength,Y=y_length/wavelength,Z=z_length/wavelength,
+                             d0=coord_centre_dec*D2R,h0=coord_centre_ha*D2R,l=l,m=m,n=n,time_int=time_res)
+
             else:
-                tdecor = tdecorr_nophasetrack(X=x_length,Y=y_length,dec_s=dec*D2R,ha_s=ha*D2R,t=time_res)
+                # tdecor = tdecorr_nophasetrack(X=x_length,Y=y_length,dec_s=dec*D2R,ha_s=ha*D2R,t=time_res)
+                coord_centre_ha = LST - coord_centre_ra
+                tdecor = tdecorr_nophasetrack(X=x_length/wavelength,Y=y_length/wavelength,Z=z_length/wavelength,
+                             d0=MWA_LAT*D2R,h0=0.0,l=l,m=m,n=n,time_int=time_res,dec_s=MWA_LAT*D2R,ha_s=0.0)
+
+                # frac_freq =  pi *(chan_width / freqcent)
+                # print(u*frac_freq,v*frac_freq,w*frac_freq,tdecor)
             this_vis *= tdecor
 
         ##Add in decor if asked for

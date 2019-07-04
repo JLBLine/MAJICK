@@ -253,7 +253,7 @@ else:
     dec_point = MWA_LAT
 
 ha_point = initial_lst - initial_ra_point
-
+print('MAJ point',ha_point*D2R,dec_point*D2R)
 
 
 ##delays = zeros((2,16))
@@ -326,10 +326,35 @@ antenna_header = base_uvfits[1].header
 
 ##Get the local topocentric X,Y,Z values for the MWA using the local topocentric e,n,h
 ##values from the antenna locs in MWA_Tools
-array_layout = "%s/telescopes/%s/antenna_locations_%s.txt" %(MAJICK_DIR,options.telescope,options.telescope)
+# array_layout = "%s/telescopes/%s/antenna_locations_%s.txt" %(MAJICK_DIR,options.telescope,options.telescope)
+# anntenna_locs = loadtxt(array_layout)
+# X,Y,Z = enh2xyz(anntenna_locs[:,0],anntenna_locs[:,1],anntenna_locs[:,2],MWA_LAT*D2R)
 
-anntenna_locs = loadtxt(array_layout)
-X,Y,Z = enh2xyz(anntenna_locs[:,0],anntenna_locs[:,1],anntenna_locs[:,2],MWA_LAT*D2R)
+##Get the east, north, height antenna positions from the metafits
+##Tile positions are stored for both XX/YY pols so only
+##want to select half of them
+east = f[1].data['East']
+north = f[1].data['North']
+height = f[1].data['Height']
+
+##Create and fill a layout array
+array_layout = zeros((len(east)/2,3))
+##Tiles are listed as YY,XX,YY,XX so only use half positions
+selection = arange(0,len(east),2)
+
+##There is some kind of co-ordinate difference between the RTS and OSKAR, so
+##need to make all coords negative here
+## (trial and error found this gives the expected u,v,w coords)
+array_layout[:,0] = east[selection]
+array_layout[:,1] = north[selection]
+array_layout[:,2] = height[selection]
+
+
+X,Y,Z = enh2xyz(east[selection], north[selection],height[selection],MWA_LAT*D2R)
+
+base_uvfits[1].data['STABXYZ'][:,0] = X
+base_uvfits[1].data['STABXYZ'][:,1] = Y
+base_uvfits[1].data['STABXYZ'][:,2] = Z
 
 num_baselines = (len(X)*(len(X)-1)) / 2
 
@@ -356,6 +381,8 @@ for baseline in baselines:
     xyz_lengths.append([x_length,y_length,z_length])
 
 xyz_lengths = array(xyz_lengths)
+
+savez_compressed('majick_coords.npz',x_length=xyz_lengths[:,0],y_length=xyz_lengths[:,1],z_length=xyz_lengths[:,2])
 
 ##Want to work out the maximum u,v coord for degridding
 ##so we can make an appropriately sized u,v plane to
@@ -520,6 +547,7 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
         ##Convert the time offset into a sky offset in degrees
         ##Add in half a time resolution step to give the central LST
         sky_offset = (((time + (time_res / 2.0))*SOLAR2SIDEREAL)*(15.0/3600.0))
+        # sky_offset = (((time)*SOLAR2SIDEREAL)*(15.0/3600.0))
 
         ##Currently always point to zenith
         #ra_point = initial_ra_point + sky_offset
@@ -538,8 +566,9 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
         ##This means as observation goes on, a source dirfts through the
         ##l,m plane
         if options.no_phase_tracking:
-            coord_centre_ra = ra_point
-            coord_centre_dec = dec_point
+            # coord_centre_ra = ra_point
+            coord_centre_dec = MWA_LAT
+            coord_centre_ra = lst
         else:
             ##If phase tracking, sets the zero point of l,m,n to ra_phase,dec_phase
             ##So really for a source, l,m never changes as moves with the sky
@@ -629,7 +658,8 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
             x_length,y_length,z_length = xyz_lengths[baseline,:]
             ##The old way of non-phase tracking
             if options.no_phase_tracking:
-                u,v,w = get_uvw_freq(x_length,y_length,z_length,dec_point*D2R,ha_point*D2R,freq=freq_cent)
+                # u,v,w = get_uvw_freq(x_length,y_length,z_length,dec_point*D2R,ha_point*D2R,freq=freq_cent)
+                u,v,w = get_uvw_freq(x_length,y_length,z_length,MWA_LAT*D2R,0.0*D2R,freq=freq_cent)
             else:
                 u,v,w = get_uvw_freq(x_length,y_length,z_length,dec_phase*D2R,ha_phase*D2R,freq=freq_cent)
 
@@ -648,6 +678,7 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
                             phasetrack = False
                         else:
                             phasetrack = True
+                        # print('time,lst',time_ind,lst*D2R)
                         model_xxpol,model_xypol,model_yxpol,model_yypol = model_vis(u=u,v=v,w=w,source=source,coord_centre_ra=coord_centre_ra,
                             coord_centre_dec=coord_centre_dec,LST=lst,x_length=x_length,y_length=y_length,z_length=z_length,
                             freq_decor=freq_decor,freq=freq_cent,time_decor=time_decor,time_res=time_res,chan_width=freq_res*1e+6,beam=beam,
@@ -743,10 +774,10 @@ sim_freqs = array(sim_freqs)
 ##Weight all of the
 if srclist:
     if beam:
-        for name,source in sources.iteritems():
+        # for name,source in sources.iteritems():
             #weight_by_beam(source=source,freqcent=freq_cent,LST=initial_lst,delays=delays,beam=beam,fix_beam=options.fix_beam,time_range)
-            extrapolate_and_cal_beam(sources=sources,initial_lst=initial_lst,delays=delays,beam=beam,
-                fix_beam=options.fix_beam,time_range=time_range,time_res=time_res,sim_freqs=sim_freqs,freqcent=band_freq_cent)
+        extrapolate_and_cal_beam(sources=sources,initial_lst=initial_lst,delays=delays,beam=beam,
+            fix_beam=options.fix_beam,time_range=time_range,time_res=time_res,sim_freqs=sim_freqs,freqcent=band_freq_cent)
 
 all_args_list = [[freq_ind,freq] for freq_ind,freq in enumerate(sim_freqs)]
 
@@ -810,6 +841,7 @@ for time_ind,time in enumerate(time_range):
     ##Convert the time offset into a sky offset in degrees
     ##Add in half a time resolution step to give the central LST
     sky_offset = (((time + (time_res / 2.0))*SOLAR2SIDEREAL)*(15.0/3600.0))
+    # sky_offset = (((time)*SOLAR2SIDEREAL)*(15.0/3600.0))
 
     ##Currently always point to zenith
     #ra_point = initial_ra_point + sky_offset
@@ -821,9 +853,12 @@ for time_ind,time in enumerate(time_range):
     ra_point = lst - ha_point
     ha_phase = lst - ra_phase
 
+    print(time_ind,lst)
+
     ##Calc u,v,w in meters
     if options.no_phase_tracking:
-        u,v,w = get_uvw(xyz_lengths[:,0],xyz_lengths[:,1],xyz_lengths[:,2],dec_point*D2R,ha_point*D2R)
+        u,v,w = get_uvw(xyz_lengths[:,0],xyz_lengths[:,1],xyz_lengths[:,2],MWA_LAT*D2R,0.0*D2R)
+        # u,v,w = get_uvw(xyz_lengths[:,0],xyz_lengths[:,1],xyz_lengths[:,2],dec_point*D2R,ha_point*D2R)
     else:
         u,v,w = get_uvw(xyz_lengths[:,0],xyz_lengths[:,1],xyz_lengths[:,2],dec_phase*D2R,ha_phase*D2R)
 
@@ -844,6 +879,9 @@ for time_ind,time in enumerate(time_range):
     adjust_float_jd_array = float_jd_array + (time / (24.0*60.0*60.0))
     date_array[array_time_loc:array_time_loc+num_baselines] = adjust_float_jd_array
 
+
+savez_compressed('majick_coords.npz',x_length=xyz_lengths[:,0],y_length=xyz_lengths[:,1],z_length=xyz_lengths[:,2],
+                u=uus,v=vvs,w=wws)
 
 output_uvfits_name = "%s/%s_t%02d_f%.3f_band%02d.uvfits" %(data_loc,tag_name,time_res,ch_width/1e+6,band_num)
 

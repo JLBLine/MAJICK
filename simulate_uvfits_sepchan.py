@@ -332,12 +332,31 @@ base_header = base_uvfits[0].header
 antenna_table = base_uvfits[1].data
 antenna_header = base_uvfits[1].header
 
-##Get the local topocentric X,Y,Z values for the MWA using the local topocentric e,n,h
-##values from the antenna locs in MWA_Tools
-array_layout = "%s/telescopes/%s/antenna_locations_%s.txt" %(MAJICK_DIR,options.telescope,options.telescope)
+##Get the east, north, height antenna positions from the metafits
+##Tile positions are stored for both XX/YY pols so only
+##want to select half of them
+east = f[1].data['East']
+north = f[1].data['North']
+height = f[1].data['Height']
 
-anntenna_locs = loadtxt(array_layout)
-X,Y,Z = enh2xyz(anntenna_locs[:,0],anntenna_locs[:,1],anntenna_locs[:,2],MWA_LAT*D2R)
+##Create and fill a layout array
+array_layout = zeros((len(east)/2,3))
+##Tiles are listed as YY,XX,YY,XX so only use half positions
+selection = arange(0,len(east),2)
+
+##There is some kind of co-ordinate difference between the RTS and OSKAR, so
+##need to make all coords negative here
+## (trial and error found this gives the expected u,v,w coords)
+array_layout[:,0] = east[selection]
+array_layout[:,1] = north[selection]
+array_layout[:,2] = height[selection]
+
+
+X,Y,Z = enh2xyz(east[selection], north[selection],height[selection],MWA_LAT*D2R)
+
+base_uvfits[1].data['STABXYZ'][:,0] = X
+base_uvfits[1].data['STABXYZ'][:,1] = Y
+base_uvfits[1].data['STABXYZ'][:,2] = Z
 
 num_baselines = (len(X)*(len(X)-1)) / 2
 
@@ -399,7 +418,10 @@ if options.degrid:
     ##If using fix_beam, don't need to load beam images multiple times:
     ##big saving computationally
     if options.fix_beam:
-        beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,options.telescope)
+        if 'MWA' in options.telescope:
+            beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,'MWA_phase1')
+        else:
+            beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,options.telescope)
         ##If using CHIPS in fix beam mode, set to 186.235MHz (+0.02 for half channel width)
         image_XX = my_loadtxt('%s/beam_%s_186255000.000_XX.txt' %(beam_loc,delay_str))
         image_YY = my_loadtxt('%s/beam_%s_186255000.000_YY.txt' %(beam_loc,delay_str))
@@ -409,7 +431,10 @@ if options.degrid:
 
 if over_sampled:
     #print 'Begun creating oversampled kernel'
-    beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,options.telescope)
+    if 'MWA' in options.telescope:
+        beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,'MWA_phase1')
+    else:
+        beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,options.telescope)
     ##If using CHIPS in fix beam mode, set to 186.235MHz (+0.02 for half channel width)
     image_XX = my_loadtxt('%s/beam_%s_186255000.000_XX.txt' %(beam_loc,delay_str))
     image_YY = my_loadtxt('%s/beam_%s_186255000.000_YY.txt' %(beam_loc,delay_str))
@@ -502,7 +527,7 @@ num_time_steps = len(time_range)
 ##like the uvfits file likes
 int_jd, float_jd = calc_jdcal(initial_date)
 
-#@profile
+# @profile
 def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_settings=options.chips_settings,central_freq_chan=central_freq_chan,healpix_array=healpix_array,nside=nside):
     print 'Doing frequency', all_args[1]
 
@@ -553,8 +578,9 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
         ##This means as observation goes on, a source dirfts through the
         ##l,m plane
         if options.no_phase_tracking:
-            coord_centre_ra = ra_point
-            coord_centre_dec = dec_point
+            # coord_centre_ra = ra_point
+            coord_centre_dec = MWA_LAT
+            coord_centre_ra = lst
         else:
             ##If phase tracking, sets the zero point of l,m,n to ra_phase,dec_phase
             ##So really for a source, l,m never changes as moves with the sky
@@ -660,7 +686,8 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
             x_length,y_length,z_length = xyz_lengths[baseline,:]
             ##The old way of non-phase tracking
             if options.no_phase_tracking:
-                u,v,w = get_uvw_freq(x_length,y_length,z_length,dec_point*D2R,ha_point*D2R,freq=freq_cent)
+                # u,v,w = get_uvw_freq(x_length,y_length,z_length,dec_point*D2R,ha_point*D2R,freq=freq_cent)
+                u,v,w = get_uvw_freq(x_length,y_length,z_length,MWA_LAT*D2R,0.0*D2R,freq=freq_cent)
             else:
                 u,v,w = get_uvw_freq(x_length,y_length,z_length,dec_phase*D2R,ha_phase*D2R,freq=freq_cent)
 
@@ -778,10 +805,8 @@ sim_freqs = sim_freqs[sim_freq_chan*sim_freq_groupsize:(sim_freq_chan+1)*sim_fre
 ##Weight all of the
 if srclist:
     if beam:
-        for name,source in sources.iteritems():
-            #weight_by_beam(source=source,freqcent=freq_cent,LST=initial_lst,delays=delays,beam=beam,fix_beam=options.fix_beam,time_range)
-            extrapolate_and_cal_beam(sources=sources,initial_lst=initial_lst,delays=delays,beam=beam,
-                fix_beam=options.fix_beam,time_range=time_range,time_res=time_res,sim_freqs=sim_freqs,freqcent=band_freq_cent)
+        extrapolate_and_cal_beam(sources=sources,initial_lst=initial_lst,delays=delays,beam=beam,
+            fix_beam=options.fix_beam,time_range=time_range,time_res=time_res,sim_freqs=sim_freqs,freqcent=band_freq_cent)
 
 all_args_list = [[freq_ind,freq] for freq_ind,freq in enumerate(sim_freqs)]
 

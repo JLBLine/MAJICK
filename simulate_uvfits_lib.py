@@ -30,12 +30,12 @@ def create_uv_kernel(image_kernel=False):
     '''Takes a image kernel and turns into a uv kernel'''
     ##FFT shift the image ready for FFT
     image_kernel = fft.ifftshift(image_kernel)
-    ##Do the forward FFT as we define the inverse FFT for u,v -> l,m. 
+    ##Do the forward FFT as we define the inverse FFT for u,v -> l,m.
     ##Scale the output correctly for the way that numpy does it, and remove FFT shift
     #uv_kernel = fft.fft2(image_kernel) #/ (image_kernel.shape[0] * image_kernel.shape[1])
     uv_kernel = fft.fft2(image_kernel) / (KERNEL_SIZE * KERNEL_SIZE)
     uv_kernel = fft.fftshift(uv_kernel)
-    
+
     return uv_kernel
 
 def undo_phase_track(visibilities=None,new_wws=None):
@@ -47,23 +47,23 @@ def undo_phase_track(visibilities=None,new_wws=None):
     ##so just multiply by exp(-2*pi*j*w) to undo
     sign = -1
     PhaseConst = 1j * 2 * pi * sign
-    
+
     phase_rotate = n_exp(PhaseConst * new_wws)
     rotated_visis *= phase_rotate
-    
-    
-def create_uvfits(v_container=None,freq_cent=None, ra_point=None, dec_point=MWA_LAT, 
+
+
+def create_uvfits(v_container=None,freq_cent=None, ra_point=None, dec_point=MWA_LAT,
                   output_uvfits_name=None,uu=None,vv=None,ww=None,
                   baselines_array=None,date_array=None,date=None,
                   central_freq_chan=None,ch_width=None,template_uvfits=None,
                   int_jd=None):
     '''Takes visibility date and writes out a uvfits format file'''
-    
+
     ##UU, VV, WW don't actually get read in by RTS - might be an issue with
     ##miriad/wsclean however, as it looks like oskar w = negative maps w
     uvparnames = ['UU','VV','WW','BASELINE','DATE']
     parvals = [uu,vv,ww,baselines_array,date_array]
-        
+
     uvhdu = fits.GroupData(v_container,parnames=uvparnames,pardata=parvals,bitpix=-32)
     uvhdu = fits.GroupsHDU(uvhdu)
 
@@ -112,25 +112,27 @@ def create_uvfits(v_container=None,freq_cent=None, ra_point=None, dec_point=MWA_
 
     uvhdu.header['PZERO5'] = float(int_jd)
 
-    uvhdu.header['OBJECT']  = 'Undefined'                                                           
-    uvhdu.header['OBSRA']   = ra_point                                          
+    uvhdu.header['OBJECT']  = 'Undefined'
+    uvhdu.header['OBSRA']   = ra_point
     uvhdu.header['OBSDEC']  = dec_point
-    
+    # uvhdu.header['TELESCOPE'] = 'MWA'
+
     ##ANTENNA TABLE MODS======================================================================
 
     template_uvfits[1].header['FREQ'] = freq_cent
-    
+    # template_uvfits[1].header['TELESCOPE'] = 'MWA'
+    template_uvfits[1].header['ARRNAME'] = 'MWA'
+
     ###MAJICK uses this date to set the LST
     #dmy, hms = date.split()
     #day,month,year = map(int,dmy.split('-'))
     #hour,mins,secs = map(float,hms.split(':'))
-    
+
     #rdate = "%d-%02d-%02dT%02d:%02d:%.2f" %(year,month,day,hour,mins,secs)
-    
+
     template_uvfits[1].header['RDATE'] = date
 
     ## Create hdulist and write out file
     hdulist = fits.HDUList(hdus=[uvhdu,template_uvfits[1]])
     hdulist.writeto(output_uvfits_name,overwrite=True)
     hdulist.close()
-

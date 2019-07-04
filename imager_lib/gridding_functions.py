@@ -207,11 +207,27 @@ def tdecorr_phasetrack(X=None,Y=None,Z=None,d0=None,h0=None,l=None,m=None,n=None
     D_t = do_sinc(nu_pt*time_int)
     return D_t
 
-def tdecorr_nophasetrack(X=None,Y=None,dec_s=None,ha_s=None,t=None):
+# def tdecorr_nophasetrack(X=None,Y=None,dec_s=None,ha_s=None,t=None):
+#     '''Calculates the time decorrelation factor using u, at a given
+#     sky position and time intergration'''
+#     nu_fu= -W_E*cos(dec_s)*(sin(ha_s)*X + cos(ha_s)*Y)
+#     D_t=do_sinc(nu_fu*t)
+#     return D_t
+
+def tdecorr_nophasetrack(X=None,Y=None,Z=None,d0=None,h0=None,l=None,m=None,n=None,time_int=None,dec_s=None,ha_s=None):
     '''Calculates the time decorrelation factor using u, at a given
     sky position and time intergration'''
-    nu_fu= -W_E*cos(dec_s)*(sin(ha_s)*X + cos(ha_s)*Y)
-    D_t=do_sinc(nu_fu*t)
+
+    # nu_fu= -W_E*cos(dec_s)*(sin(ha_s)*X + cos(ha_s)*Y)
+    # D_t=do_sinc(nu_fu*time_int)
+
+    const = time_int*W_E
+
+    part1 = const*(cos(h0)*X - sin(h0)*Y)
+    part2 = const*(sin(d0)*sin(h0)*X + sin(d0)*cos(h0)*Y)
+    part3 = const*(-cos(d0)*sin(h0)*X - cos(d0)*cos(h0)*Y)
+    D_t = do_sinc(l*part1 + m*part2 + n*part3)
+    # print("%.5f %.5f %.5f %.5f %.5f %.5f %.5f" %(part1, part2, part3, l, m, n, D_t))
     return D_t
 
 def fdecorr(u=None,v=None,w=None,l=None,m=None,n=None,chan_width=None,freq=None,phasetrack=False):
