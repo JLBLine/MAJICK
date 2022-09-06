@@ -53,7 +53,7 @@ def generate_gsm_2016(freq=None,this_date=None,observer=None,xsize=225):
             left_index = i
             break
     if left_index < 0:
-        print "FREQUENCY ERROR: %.2e GHz is outside supported frequency range of %.2e GHz to %.2e GHz."%(freq, spec_nf[0, 0], spec_nf[0, -1])
+        print("FREQUENCY ERROR: %.2e GHz is outside supported frequency range of %.2e GHz to %.2e GHz."%(freq, spec_nf[0, 0], spec_nf[0, -1]))
 
 
     interp_spec_nf = np.copy(spec_nf)

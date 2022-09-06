@@ -24,7 +24,7 @@ from numba import jit
 from scipy.special import factorial,eval_hermite
 MAJICK_DIR = environ['MAJICK_DIR']
 
-with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
+with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR, 'rb') as f:  # Python 3: open(..., 'rb')
     D2R, R2D, VELC, MWA_LAT, KERNEL_SIZE, W_E, SOLAR2SIDEREAL = pickle.load(f)
 
 beam_freqs = arange(49920000,327680000+1.28e6,1.28e+6)
@@ -89,9 +89,9 @@ def create_calibrator(cali_info=None,num_times=None):
     lines = cali_info.split('\n')
     lines = [line for line in lines if line!='' and '#' not in line]
     ##If there are components to the source, see where the components start and end
-    comp_starts = [i for i in xrange(len(lines)) if 'COMPONENT' in lines[i] and 'END' not in lines[i]]
+    comp_starts = [i for i in range(len(lines)) if 'COMPONENT' in lines[i] and 'END' not in lines[i]]
     # comp_starts = where(array(comp_starts) == 'COMPONENT')
-    comp_ends = [i for i in xrange(len(lines)) if lines[i]=='ENDCOMPONENT']
+    comp_ends = [i for i in range(len(lines)) if lines[i]=='ENDCOMPONENT']
     # comp_starts = where(array(comp_starts) == 'ENDCOMPONENT')
     # savez_compressed('wft.npz',starts=array(comp_starts),ends=array(comp_ends))
     primary_comp = Component_Info()
@@ -204,7 +204,6 @@ def local_beam(za=None, az=None, freq=None, delays=None, zenithnorm=True, power=
 
     #Use mwa_tile makeUnpolInstrumentalResponse because we have swapped axes
     vis = mwa_tile.makeUnpolInstrumentalResponse(j,j)
-
     ##Ok so the vis below the last two axis contain the jones
     ##matrix I believe
     ##Return all 4 cross pols (XX,XY,YX,XX) = (0,0), (0,1), (1,0), (1,1)
@@ -237,12 +236,15 @@ def interpolate_beam(sample_freq=None,delays=None,za=None,az=None,amps=ones((2,1
 
     ##Calculate the beam for each of the frequencies we are sampling
     ##the beam at, for all az,za. Stick em in a 2D array shape = freq,sky_pos
+
     for freq_ind,freq in enumerate(sample_freqs):
 
         tile = beam_full_EE.ApertureArray(MWAPY_H5PATH,freq)
         mybeam = beam_full_EE.Beam(tile, delays, amps=amps)
 
         XX,XY,YX,YY = local_beam(za=[za], az=[az], freq=freq, delays=delays, tile=tile, mybeam=mybeam)
+
+        print(XX,XY,YX,YY)
 
         calc_beam_points_XX[freq_ind,:] = XX
         calc_beam_points_XY[freq_ind,:] = XY
@@ -398,9 +400,9 @@ def extrapolate_and_cal_beam(sources=None,initial_lst=None,delays=None,beam=True
         lst = initial_lst + sky_offset
         if lst >=360.0: lst -= 360.0
 
-        for name,source in sources.iteritems():
+        for name,source in sources.items():
             ha_prim = lst - source.ras[0]
-            print(ha_prim,source.decs[0])
+            print("GETTING HA,DEC", ha_prim,source.decs[0])
             Az_prim,Alt_prim = eq2horz(ha_prim,source.decs[0],MWA_LAT)
             if Alt_prim < 0.0:
                 source.skip.append(True)
@@ -414,6 +416,8 @@ def extrapolate_and_cal_beam(sources=None,initial_lst=None,delays=None,beam=True
                     beam_index += 1
 
                 ##Extrapolate the flux of each comoponant
+
+    print(beam_has, beam_decs)
 
 
     ##Convert the sky positions into MWA beam format
@@ -434,9 +438,9 @@ def extrapolate_and_cal_beam(sources=None,initial_lst=None,delays=None,beam=True
         ##TODO - get beam goodness into the source class
 
         ##Populate the calibrators with the correct beam values, for all sim freqs
-        for name,source in sources.iteritems():
+        for name,source in sources.items():
             ##For each component
-            for component_index in xrange(len(source.ras)):
+            for component_index in range(len(source.ras)):
                 source.XX_beams.append(interp_beam_points_XX[:,source.beam_indexes[component_index]])
                 source.XY_beams.append(interp_beam_points_XY[:,source.beam_indexes[component_index]])
                 source.YX_beams.append(interp_beam_points_YX[:,source.beam_indexes[component_index]])
@@ -507,7 +511,7 @@ def calc_visi_envelope(pa=None,major=None,minor=None,shapelet_coeffs=None,comp_t
         sbf_n1 = []
         sbf_n2 = []
 
-        for coeff in xrange(len(shapelet_coeffs)):
+        for coeff in range(len(shapelet_coeffs)):
             n1,n2,n3 = shapelet_coeffs[coeff]
 
             if ( n1 >= 0 and n2 >= 0 and n1 < sbf_N and n2 < sbf_N ):
@@ -538,7 +542,7 @@ def calc_visi_envelope(pa=None,major=None,minor=None,shapelet_coeffs=None,comp_t
         ##loop over shapelet coefficients, building up the intensity model, if this baseline is in range
 
         if (xindex >= 0) and (yindex >= 0) and (xindex+1 < sbf_L) and (yindex+1 < sbf_L):
-            for coeff in xrange(n_coeffs):
+            for coeff in range(n_coeffs):
 
                 ##do linear interpolation of the basis functions.
                 xlow  = sbf_n1[coeff][xindex]
@@ -585,7 +589,7 @@ def calc_visi_envelope(pa=None,major=None,minor=None,shapelet_coeffs=None,comp_t
         # kx *= const_x
         # ky *= const_y
         #
-        # for coeff in xrange(len(shapelet_coeffs)):
+        # for coeff in range(len(shapelet_coeffs)):
         #     n1,n2,coeff = shapelet_coeffs[coeff]
         #     V_envelope += 1j**(n1+n2)*(coeff)*jack_basis(n1=n1,n2=n2,xrot=kx,yrot=ky,b1=1/major,b2=1/minor)
         #
@@ -622,7 +626,7 @@ def model_vis(u=None,v=None,w=None,source=None,coord_centre_ra=None,coord_centre
     wavelength = VELC / freqcent
 
     ##For each component in the source
-    for i in xrange(len(source.ras)):
+    for i in range(len(source.ras)):
         ra,dec = source.ras[i],source.decs[i]
         ha = LST - ra
 
@@ -642,7 +646,7 @@ def model_vis(u=None,v=None,w=None,source=None,coord_centre_ra=None,coord_centre
             ext_flux = extrap_flux([freqs[-2],freqs[-1]],[fluxs[-2],fluxs[-1]],freqcent)
         ##Otherwise, choose the two frequencies above and below, and extrap between them
         else:
-            for i in xrange(len(freqs)-1):
+            for i in range(len(freqs)-1):
                 if freqs[i]<freqcent and freqs[i+1]>freqcent:
                     ext_flux = extrap_flux([freqs[i],freqs[i+1]],[fluxs[i],fluxs[i+1]],freqcent)
 
@@ -719,7 +723,7 @@ def apply_gains(model,gains):
     '''Takes model visibilities and gains and applies the gains (multiples by) to the model'''
     updated_model = []
     model_ind = 0
-    for i in xrange(len(gains)-1):
+    for i in range(len(gains)-1):
         for j in range(i+1,len(gains)):
             updated_model.append(gains[i]*model[model_ind]*conjugate(gains[j]))
             model_ind += 1
@@ -729,7 +733,7 @@ def remove_gains(visibilities,gains):
     '''Takes the real visibilities and estimated gains and removes the gains (divides by) from the visibilities'''
     updated_visibilities = []
     visibilities_ind = 0
-    for i in xrange(len(gains)-1):
+    for i in range(len(gains)-1):
         for j in range(i+1,len(gains)):
             updated_visibilities.append(visibilities[visibilities_ind] / (gains[i]*conjugate(gains[j])))
             visibilities_ind += 1
@@ -744,7 +748,7 @@ def minimise_using_a(visi_data,gains,model):
     visi_ind = 0
     ##Set up empty array
     a_array = zeros((2*len(visi_data),2*len(gains)))
-    for i in xrange(len(gains)-1):
+    for i in range(len(gains)-1):
         for j in range(i+1,len(gains)):
             a_array[2*visi_ind,2*i] = real(visi_data[visi_ind]*conjugate(gains[j]))
             a_array[2*visi_ind,2*i+1] = -imag(visi_data[visi_ind]*conjugate(gains[j]))
@@ -770,7 +774,7 @@ def minimise_using_a(visi_data,gains,model):
     ##Populate a difference array with real and imag parts of the
     ##the difference between
     diff_array = zeros((2*len(visi_data),1))
-    for i in xrange(len(diffs)):
+    for i in range(len(diffs)):
         diff_array[2*i] = real(diffs[i])
         diff_array[2*i+1] = imag(diffs[i])
 
@@ -780,7 +784,7 @@ def minimise_using_a(visi_data,gains,model):
 
     ##Put the updates that we found back into complex form so that we can easily apply to the gains
     delta_gains = zeros(len(gains),dtype=complex)
-    for i in xrange(len(delta_gains)):
+    for i in range(len(delta_gains)):
         delta_gains[i] = complex(x_tilde[2*i],x_tilde[2*i+1])
 
     ##TODO Add in a safe-guard against massive updates to avoid death of matrix?
@@ -858,7 +862,7 @@ def minimise_using_a(visi_data,gains,model):
 
                 #for calibrator in calibrators:
                     #model_xxpols = []
-                    #for i in xrange(len(uvdata.uu)):
+                    #for i in range(len(uvdata.uu)):
                         #u,v = uvdata.uu[i],uvdata.vv[i]
 
                         ###TODO always phase to LST?? Make it an option?

@@ -12,6 +12,7 @@ from numpy import abs as np_abs
 from numpy import exp as np_exp
 from cmath import phase,exp
 from sys import exit
+import numpy as np
 #from astropy.wcs import WCS
 #from time import time
 #import matplotlib.pyplot as plt
@@ -22,6 +23,7 @@ import scipy as sp
 from os import environ
 import pickle
 from numba import jit
+import matplotlib.pyplot as plt
 
 try:
     from pyfft.cuda import Plan
@@ -35,7 +37,7 @@ from copy import deepcopy
 
 
 MAJICK_DIR = environ['MAJICK_DIR']
-with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
+with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR, 'rb') as f:  # Python 3: open(..., 'rb')
     D2R, R2D, VELC, MWA_LAT, KERNEL_SIZE, W_E, SOLAR2SIDEREAL = pickle.load(f)
 
 
@@ -138,7 +140,8 @@ def sample_image_coords(n2max=None,l_reso=None,num_samples=KERNEL_SIZE):
     return l_mesh, m_mesh
 
 #@profile
-def image2kernel(image=None,cell_reso=None,u_off=0.0,v_off=0.0,l_mesh=None,m_mesh=None):
+def image2kernel(image=None, cell_reso=None, u_off=0.0, v_off=0.0,
+                 l_mesh=None, m_mesh=None):
     '''Takes an input image array, and FTs to create a kernel
     Uses the u_off and v_off (given in pixels values), cell resolution
     and l and m coords to phase    shift the image, to create a kernel
@@ -490,8 +493,10 @@ def convert_image_lm2uv(image=None,l_reso=None,mode='CPU',ra_offset=None,dec_off
 def my_loadtxt(image_loc):
     '''For small arrays, loadtxt is slooooow so made my own'''
     #my_im = loadtxt(image_loc)
+    # print("LOADING",image_loc)
     lines = open(image_loc).read().split('\n')
-    my_im = array([map(float,line.split()) for line in lines if line != ''])
+    my_im = array([list(map(float,line.split())) for line in lines if line != ''])
+    # print(len(my_im))
     my_im.shape = (KERNEL_SIZE,KERNEL_SIZE)
 
     return my_im
@@ -555,6 +560,8 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
 
     this_XX = deepcopy(image_XX)
     this_YY = deepcopy(image_YY)
+
+    # print("THIS",this_XX)
 
     if time_decor:
         ra0,dec0 = phase_centre
@@ -629,8 +636,13 @@ def reverse_grid(uv_data_array=None, l_reso=None, m_reso=None, u=None, v=None, w
         kernel_array_XX = image2kernel(image_XX,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
         kernel_array_YY = image2kernel(image_YY,cell_reso=u_reso,u_off=u_off,v_off=v_off,l_mesh=l_mesh,m_mesh=m_mesh)
 
+
+    print(np.sum(np.real(kernel_array_XX)), np.sum(np.abs(kernel_array_XX)))
+
     ##Grab the u,v data point that you want using the given kernel
     sim_complex_XX = apply_kernel(uv_data_array=uv_data_array,u_ind=u_ind,v_ind=v_ind,kernel=kernel_array_XX)
     sim_complex_YY = apply_kernel(uv_data_array=uv_data_array,u_ind=u_ind,v_ind=v_ind,kernel=kernel_array_YY)
+
+    # print("XX", sim_complex_XX, "YY", sim_complex_YY)
 
     return sim_complex_XX,sim_complex_YY,image_XX,image_YY

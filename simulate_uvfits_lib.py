@@ -15,7 +15,7 @@ from os import environ
 import pickle
 
 MAJICK_DIR = environ['MAJICK_DIR']
-with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
+with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR, 'rb') as f:  # Python 3: open(..., 'rb')
     D2R, R2D, VELC, MWA_LAT, KERNEL_SIZE, W_E, SOLAR2SIDEREAL = pickle.load(f)
 
 def enh2xyz(east,north,height,latitiude):

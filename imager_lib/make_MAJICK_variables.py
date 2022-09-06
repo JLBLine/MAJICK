@@ -21,5 +21,5 @@ W_E = 7.292115e-5
 SOLAR2SIDEREAL = 1.00274
 
 
-with open('MAJICK_variables.pkl', 'w') as f:
+with open('MAJICK_variables.pkl', 'wb') as f:
     pickle.dump([D2R, R2D, VELC, MWA_LAT, KERNEL_SIZE, W_E, SOLAR2SIDEREAL], f)

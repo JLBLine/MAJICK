@@ -17,9 +17,10 @@ from simulate_uvfits_lib import *
 from subprocess import call
 import healpy as hp
 from project_healpix import convert_healpix2lm,find_healpix_zenith_offset
+import matplotlib.pyplot as plt
 
 MAJICK_DIR = environ['MAJICK_DIR']
-with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
+with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR, 'rb') as f:  # Python 3: open(..., 'rb')
     D2R, R2D, VELC, MWA_LAT, KERNEL_SIZE, W_E, SOLAR2SIDEREAL = pickle.load(f)
 
 def enh2xyz(east,north,height,latitiude):
@@ -180,13 +181,14 @@ if data_loc[-1] == '/': data_loc = data_loc[:-1]
 if options.metafits:
     try:
         f=fits.open(options.metafits)
-    except Exception,e:
-        print 'Unable to open metafits file %s: %s' % (options.metafits,e)
+    # except Exception,e:
+    except:
+        print('Unable to open metafits file %s: %s' % (options.metafits,e))
         exit(1)
 
     def test_avail(key):
         if not key in f[0].header.keys():
-            print 'Cannot find %s in %s' % (key,options.metafits)
+            print('Cannot find %s in %s' % (key,options.metafits))
             exit(1)
 
     for key in ['DATE-OBS','FREQCENT','FINECHAN','INTTIME','BANDWDTH','AZIMUTH','ALTITUDE','DELAYS','RA','DEC']:
@@ -206,12 +208,13 @@ if options.metafits:
     freq_res = ch_width / 1.0e+6
 
     delay_str = f[0].header['DELAYS']
-    print delay_str
+    print(delay_str)
 
     if delay_str == "32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32":
         delay_str = "0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
 
-    delays = array([map(int,delay_str.split(',')),map(int,delay_str.split(','))])
+    delays = array([list(map(int,delay_str.split(','))),
+                    list(map(int,delay_str.split(',')))])
 
     initial_ra_point = f[0].header['RA']
     dec_point = f[0].header['DEC']
@@ -244,7 +247,7 @@ date,time = initial_date.split('T')
 MRO.date = '/'.join(date.split('-'))+' '+time
 initial_lst = float(MRO.sidereal_time())*R2D
 
-print 'lst',initial_lst
+print('lst',initial_lst)
 
 if options.metafits:
     pass
@@ -279,7 +282,7 @@ elif options.num_freqs:
 else:
     ##Unflagged channel numbers
     good_chans = [2,3,4,5,6,7,8,9,10,11,12,13,14,15,17,18,19,20,21,22,23,24,25,26,27,28,29]
-    #good_chans = xrange(32)
+    #good_chans = range(32)
     central_freq_chan = 15
 
 ##Flagged channel numbers
@@ -338,7 +341,7 @@ north = f[1].data['North']
 height = f[1].data['Height']
 
 ##Create and fill a layout array
-array_layout = zeros((len(east)/2,3))
+array_layout = zeros((int(len(east)/2),3))
 ##Tiles are listed as YY,XX,YY,XX so only use half positions
 selection = arange(0,len(east),2)
 
@@ -360,12 +363,12 @@ num_baselines = (len(X)*(len(X)-1)) / 2
 
 ##Go through the uvfits file and replace the current X,Y,Z locations
 ##so we know for sure what array layout we have
-for i in xrange(len(X)):
+for i in range(len(X)):
     antenna_table['STABXYZ'][i] = array([X[i],Y[i],Z[i]])
 
 ##Make an antenna dict to work out baseline lengths
 antennas = {}
-for i in xrange(len(X)):
+for i in range(len(X)):
     antennas['ANT%03d' %(i+1)] = array([X[i],Y[i],Z[i]])
 
 baselines = base_data['BASELINE']
@@ -399,7 +402,7 @@ if options.degrid:
     uu_max,vv_max,ww_max = get_uvw_freq(xyz_lengths[:,0],xyz_lengths[:,1],xyz_lengths[:,2],MWA_LAT*D2R,0.0,max_freq)
 
     max_uv = max([abs(uu_max.min())],abs(uu_max.max()),abs(vv_max.min()),abs(vv_max.max()))
-    print 'max_uv is', max_uv
+    print('max_uv is', max_uv)
 
 if srclist:
     try:
@@ -418,16 +421,19 @@ if options.degrid:
     ##If using fix_beam, don't need to load beam images multiple times:
     ##big saving computationally
     if options.fix_beam:
-        if 'MWA' in options.telescope:
-            beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,'MWA_phase1')
-        else:
-            beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,options.telescope)
+        # if 'MWA' in options.telescope:
+        #     beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,'MWA_phase1')
+        # else:
+        beam_loc = '%s/telescopes/%s/primary_beam/data' %(MAJICK_DIR,options.telescope)
         ##If using CHIPS in fix beam mode, set to 186.235MHz (+0.02 for half channel width)
         image_XX = my_loadtxt('%s/beam_%s_186255000.000_XX.txt' %(beam_loc,delay_str))
         image_YY = my_loadtxt('%s/beam_%s_186255000.000_YY.txt' %(beam_loc,delay_str))
     else:
         image_XX = False
         image_YY = False
+
+    plt.imshow(image_XX, origin='lower')
+    plt.show()
 
 if over_sampled:
     #print 'Begun creating oversampled kernel'
@@ -467,8 +473,8 @@ if over_sampled:
     #u_range_kernel = linspace(-max_u+u_offset,max_u-u_offset,num_pixel)
     #v_range_kernel = linspace(-max_u+u_offset,max_u-u_offset,num_pixel)
 
-    print 'Done creating oversampled kernel'
-    print 'Oversampling %d u_reso %.5f' %(oversampling_factor,u_range_kernel[1] - u_range_kernel[0])
+    print('Done creating oversampled kernel')
+    print('Oversampling %d u_reso %.5f' %(oversampling_factor,u_range_kernel[1] - u_range_kernel[0]))
 
 else:
     uv_kernel_XX = None
@@ -506,10 +512,10 @@ if options.degrid_test:
     #mu, sigma = 5, 3
     #oversamp_image = random.normal(mu, sigma, (int(2.0*image_size+1),int(2.0*image_size+1)))
 
-    print 'FTing oversampled image'
+    print('FTing oversampled image')
     #uv_data_array_test, u_sim_test, v_sim_test, u_reso_test = convert_image_lm2uv(image=oversamp_image,l_reso=l_reso_test)
     uv_data_array_test, u_sim_test, v_sim_test, u_reso_test = convert_image_lm2uv(image=image,l_reso=l_reso_test)
-    print 'Done'
+    print('Done')
 
 if options.healpix:
     healpix_array,healpix_header = hp.read_map(options.healpix,h=True)
@@ -529,11 +535,11 @@ int_jd, float_jd = calc_jdcal(initial_date)
 
 #@profile
 def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_settings=options.chips_settings,central_freq_chan=central_freq_chan,healpix_array=healpix_array,nside=nside):
-    print 'Doing frequency', all_args[1]
+    print('Doing frequency', all_args[1])
 
     freq_chan_index,freq = all_args
     freq_cent = freq + (ch_width / 2.0)
-    n_data = num_baselines * num_time_steps
+    n_data = int(num_baselines * num_time_steps)
 
     ##Create empty data structures to save data into
     visi_data = zeros((n_data,4,3))
@@ -576,9 +582,9 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
             coord_centre_dec = dec_phase
 
         if options.single_baseline:
-            baselines = xrange(1)
+            baselines = range(1)
         else:
-            baselines = xrange(num_baselines)
+            baselines = range(int(num_baselines))
 
         ##Need to declare what uv_data_plane we have if doing a degridding simulation
         ##Add degridding visibilities
@@ -611,7 +617,7 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
 
             ##Take a healpix full sky map, rotate to observers frame, convert to u,v
             elif options.healpix or options.healpix_prepend:
-                print initial_date,time
+                print(initial_date,time)
                 date = add_time_uvfits(initial_date,time)
                 e_date,e_time = date.split('T')
                 MRO.date = '/'.join(e_date.split('-'))+' '+e_time
@@ -627,6 +633,14 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
                 image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=max_uv,rotate=True,unit=options.healpix_units)
                 print('Done - now FTing to get uvplane')
 
+                print("IMAGE kernel min, max",image_XX.min(), image_XX.max())
+
+                # plt.imshow(image, origin='lower')
+                # plt.show()
+                #
+                # plt.imshow(image_XX, origin='lower')
+                # plt.show()
+
                 ra_off, dec_off = find_healpix_zenith_offset(nside=nside,observer=MRO)
                 ra_off, dec_off = None, None
 
@@ -639,11 +653,11 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
                 date = add_time_uvfits(initial_date,time)
                 e_date,e_time = date.split('T')
                 MRO.date = '/'.join(e_date.split('-'))+' '+e_time
-                print 'Converting healpix to l,m for time',date,
+                print('Converting healpix to l,m for time',date)
                 nside,healpix_array = generate_gsm_2016(freq=freq_cent,this_date=date,observer=MRO)
                 #max_uv = 1000
                 image,l_reso = convert_healpix2lm(healpix_array=healpix_array,observer=MRO,max_uv=max_uv)
-                print 'Done - now FTing to get uvplane'
+                print('Done - now FTing to get uvplane')
 
                 ra_off, dec_off = find_healpix_zenith_offset(nside=nside,observer=MRO)
                 ra_off, dec_off = None, None
@@ -668,7 +682,7 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
 
             if srclist:
                 ##For every source in the sky
-                for name,source in sources.iteritems():
+                for name,source in sources.items():
                     ##If source is below the horizon, forget about it
                     if source.skip[time_ind]:
                         pass
@@ -713,7 +727,7 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
                         wproj=True
 
                     if beam:
-                        uv_complex_XX,uv_complex_YY,this_image_XX,this_image_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
+                        uv_complex_XX, uv_complex_YY, this_image_XX,this_image_YY = reverse_grid(uv_data_array=uv_data_array, l_reso=l_reso, u=u, v=v,
                             kernel=options.telescope,freq_cent=freq_cent,u_reso=u_reso,u_sim=u_sim,v_sim=v_sim,xyz_lengths=xyz_lengths[baseline,:],
                             phase_centre=phase_centre,time_int=time_res,freq_int=freq_res,central_lst=lst*D2R,time_decor=time_decor,
                             freq_decor=freq_decor,fix_beam=options.fix_beam,image_XX=image_XX,image_YY=image_YY,wproj=wproj,
@@ -747,10 +761,11 @@ def simulate_frequency_channel(all_args=None,good_chans=good_chans,chips_setting
 
 
 
+            visi_data[int(array_time_loc+baseline),:,:] = uv_baseline
+            # print(int(array_time_loc+baseline),
+            #       visi_data[int(array_time_loc+baseline),:,:])
 
-            visi_data[array_time_loc+baseline,:,:] = uv_baseline
-
-        if options.degrid: print '%d points lie outside u,v plane so have been skipped' %outside_uv
+        if options.degrid: print( '%d points lie outside u,v plane so have been skipped' %outside_uv)
 
     #print 'weights for sim',visi_data[:,0,2].min(),visi_data[:,0,2].max()
     savez_compressed('%s/%s_%.3f.npz' %(tmp_dir,tag_name,freq),visi_data=visi_data)
@@ -783,7 +798,7 @@ all_args_list = [[freq_ind,freq] for freq_ind,freq in enumerate(sim_freqs)]
 
 ##TODO - ONLY WORKS FOR CERTAIN PYTHON VERSIONS
 ##DAGNABIT
-print 'Now calculating visibilities'
+print('Now calculating visibilities')
 if options.multi_process:
     from multiprocessing import Pool
     from functools import partial
@@ -801,17 +816,18 @@ else:
 
 ##Read in all the saved tmp npz files and write out a uvfits file
 
-print 'Now pull in the data and create uvfits'
+print('Now pull in the data and create uvfits')
 
 ##Calc the julian date and split in the way uvfits likes
 int_jd, float_jd = calc_jdcal(initial_date)
 
 ##Need an array the length of number of baselines worth of the fractional jd date
-float_jd_array = ones(num_baselines)*float_jd
+float_jd_array = ones(int(num_baselines))*float_jd
 
 ##Create empty data structures for final uvfits file
 
-n_data = num_baselines*num_time_steps
+n_data = int(num_baselines*num_time_steps)
+num_freq_channels = int(num_freq_channels)
 
 v_container = zeros((n_data,1,1,1,num_freq_channels,4,3))
 uus = zeros(n_data)
@@ -836,7 +852,8 @@ for freq,chan in zip(sim_freqs,good_chans):
 ##Only set the u,v,w, time arrays etc once
 for time_ind,time in enumerate(time_range):
 
-    array_time_loc = num_baselines*time_ind
+    array_time_loc = int(num_baselines*time_ind)
+    num_baselines = int(num_baselines)
 
     ##Convert the time offset into a sky offset in degrees
     ##Add in half a time resolution step to give the central LST

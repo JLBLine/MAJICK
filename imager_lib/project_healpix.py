@@ -7,9 +7,10 @@ from os import environ
 import pickle
 from numpy import pi,inf,invert,logical_or,array,arange,where,zeros,arcsin,nan
 from matplotlib.pyplot import close
+import matplotlib.pyplot as plt
 
 MAJICK_DIR = environ['MAJICK_DIR']
-with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR) as f:  # Python 3: open(..., 'rb')
+with open('%s/imager_lib/MAJICK_variables.pkl' %MAJICK_DIR, 'rb') as f:  # Python 3: open(..., 'rb')
     D2R, R2D, VELC, MWA_LAT, KERNEL_SIZE, W_E, SOLAR2SIDEREAL = pickle.load(f)
 
 
@@ -80,6 +81,8 @@ def convert_healpix2lm(healpix_array=None,observer=None,max_uv=None,rotate=False
         l_reso = 2.0 / (xsize + 1)
     else:
         l_reso = 2.0 / xsize
+
+    # xsize = 501
 
     sky_view = hp.orthview(observed_sky, half_sky=True, return_projected_map=True,xsize=xsize) #xsize=IMAGE_SIZE
     close()
